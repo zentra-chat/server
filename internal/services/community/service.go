@@ -1456,7 +1456,7 @@ func (s *Service) GetInvites(ctx context.Context, communityID, userID uuid.UUID)
 	}
 	defer rows.Close()
 
-	var invites []*models.CommunityInvite
+	invites := make([]*models.CommunityInvite, 0)
 	for rows.Next() {
 		i := &models.CommunityInvite{}
 		err := rows.Scan(&i.ID, &i.CommunityID, &i.Code, &i.CreatedBy, &i.MaxUses, &i.UseCount, &i.ExpiresAt, &i.CreatedAt)
