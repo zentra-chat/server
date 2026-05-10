@@ -22,22 +22,26 @@ This repo holds the backend server for Zentra, an encrypted community chat appli
 ### Quick Start
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/zentra-chat/server.git
    cd server
    ```
 
 2. **Set up environment**
+
    ```bash
    cp .env.example .env
    ```
 
 3. **Start infrastructure**
+
    ```bash
    docker compose up -d postgres redis minio
    ```
 
 4. **Run migrations**
+
    ```bash
    docker compose run --rm migrate up
    ```
