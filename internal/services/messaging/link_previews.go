@@ -23,7 +23,7 @@ const (
 	linkPreviewTimeout  = 4 * time.Second
 )
 
-var urlRegex = regexp.MustCompile(`https?://[^\s<>()]+`)
+var urlRegex = regexp.MustCompile(`https?://[^\s<>()]+|[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}(?:/[^\s<>()]*)?`)
 
 func BuildLinkPreviews(ctx context.Context, content string) []models.LinkPreview {
 	if strings.TrimSpace(content) == "" {
@@ -54,6 +54,11 @@ func extractFirstURL(content string) string {
 	}
 
 	trimmed := strings.TrimRight(match, ".,;:!?)]\"")
+
+	if !strings.HasPrefix(trimmed, "http://") && !strings.HasPrefix(trimmed, "https://") {
+		trimmed = "https://" + trimmed
+	}
+
 	return trimmed
 }
 
