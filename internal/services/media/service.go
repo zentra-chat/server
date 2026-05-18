@@ -34,10 +34,9 @@ var (
 
 // File size limits
 const (
-	MaxImageSize       = 10 * 1024 * 1024  // 10MB
-	MaxVideoSize       = 100 * 1024 * 1024 // 100MB
-	MaxFileSize        = 50 * 1024 * 1024  // 50MB
-	MaxAvatarSize      = 5 * 1024 * 1024   // 5MB
+	MaxImageSize       = 10 * 1024 * 1024 // 10MB
+	MaxFileSize        = 50 * 1024 * 1024 // 50MB
+	MaxAvatarSize      = 5 * 1024 * 1024  // 5MB
 	ThumbnailMaxWidth  = 400
 	ThumbnailMaxHeight = 300
 )
@@ -397,8 +396,8 @@ func (s *Service) getPublicURL(bucket, objectName string) string {
 	// strip them to get the true base URL
 	for _, b := range []string{s.bucketAttachments, s.bucketAvatars, s.bucketCommunity} {
 		suffix := "/" + b
-		if strings.HasSuffix(baseURL, suffix) {
-			baseURL = strings.TrimSuffix(baseURL, suffix)
+		if before, ok := strings.CutSuffix(baseURL, suffix); ok {
+			baseURL = before
 			break
 		}
 	}
@@ -413,8 +412,8 @@ func (s *Service) trimURLToObjectName(fileURL, bucket string) string {
 	// Clean baseURL similarly to getPublicURL for consistency
 	for _, b := range []string{s.bucketAttachments, s.bucketAvatars, s.bucketCommunity} {
 		suffix := "/" + b
-		if strings.HasSuffix(baseURL, suffix) {
-			baseURL = strings.TrimSuffix(baseURL, suffix)
+		if before, ok := strings.CutSuffix(baseURL, suffix); ok {
+			baseURL = before
 			break
 		}
 	}
@@ -494,13 +493,7 @@ func (s *Service) GetPresignedURL(ctx context.Context, attachmentID uuid.UUID, e
 }
 
 // Helper functions
-func (s *Service) getMaxSizeForType(contentType string) int64 {
-	if AllowedImageTypes[contentType] {
-		return MaxImageSize
-	}
-	if AllowedVideoTypes[contentType] {
-		return MaxVideoSize
-	}
+func (s *Service) getMaxSizeForType(_ string) int64 {
 	return MaxFileSize
 }
 
