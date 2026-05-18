@@ -106,18 +106,21 @@ func (s *Service) GetDashboard(ctx context.Context) (*DashboardStats, error) {
 	// Total users
 	err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL`).Scan(&stats.TotalUsers)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch total users")
 		return nil, err
 	}
 
 	// Total messages
 	err = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages`).Scan(&stats.TotalMessages)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch total messages")
 		return nil, err
 	}
 
 	// Total communities
 	err = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL`).Scan(&stats.TotalCommunities)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch total communities")
 		return nil, err
 	}
 
@@ -152,37 +155,61 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 	stats := &AnalyticsStats{}
 
 	// Total users
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL`).Scan(&stats.TotalUsers)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL`).Scan(&stats.TotalUsers); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch total users")
+	}
 	// Total messages
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages`).Scan(&stats.TotalMessages)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages`).Scan(&stats.TotalMessages); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch total messages")
+	}
 	// Total communities
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL`).Scan(&stats.TotalCommunities)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL`).Scan(&stats.TotalCommunities); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch total communities")
+	}
 	// Total channels
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM channels`).Scan(&stats.TotalChannels)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM channels`).Scan(&stats.TotalChannels); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch total channels")
+	}
 
 	// Online users
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE status = 'online' AND deleted_at IS NULL`).Scan(&stats.OnlineUsers)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE status = 'online' AND deleted_at IS NULL`).Scan(&stats.OnlineUsers); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch online users")
+	}
 
 	// Messages today
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= CURRENT_DATE`).Scan(&stats.MessagesToday)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= CURRENT_DATE`).Scan(&stats.MessagesToday); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch messages today")
+	}
 
 	// New users today
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= CURRENT_DATE`).Scan(&stats.NewUsersToday)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= CURRENT_DATE`).Scan(&stats.NewUsersToday); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch new users today")
+	}
 
 	// Active users in the last 7 days (users who sent a message)
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(DISTINCT author_id) FROM messages WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.ActiveUsers7d)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(DISTINCT author_id) FROM messages WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.ActiveUsers7d); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch active users 7d")
+	}
 
 	// New users in the last 7 days
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.NewUsers7d)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.NewUsers7d); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch new users 7d")
+	}
 
 	// New users in the last 30 days
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '30 days'`).Scan(&stats.NewUsers30d)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '30 days'`).Scan(&stats.NewUsers30d); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch new users 30d")
+	}
 
 	// Messages in the last 7 days
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.Messages7d)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.Messages7d); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch messages 7d")
+	}
 
 	// Messages in the last 30 days
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days'`).Scan(&stats.Messages30d)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days'`).Scan(&stats.Messages30d); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch messages 30d")
+	}
 
 	// Average messages per user
 	if stats.TotalUsers > 0 {
@@ -190,13 +217,21 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 	}
 
 	// Average members per community (only communities with members)
-	_ = s.db.QueryRow(ctx, `SELECT COALESCE(AVG(member_count), 0) FROM communities WHERE deleted_at IS NULL AND member_count > 0`).Scan(&stats.AvgMembersPerCommunity)
+	if err := s.db.QueryRow(ctx, `SELECT COALESCE(AVG(member_count), 0) FROM communities WHERE deleted_at IS NULL AND member_count > 0`).Scan(&stats.AvgMembersPerCommunity); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch avg members per community")
+	}
 
 	// Growth rates (compare last 7 days to previous 7 days)
 	var prev7Users, prev7Messages, prev7Communities int64
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Users)
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Messages)
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Communities)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Users); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch prev7 users")
+	}
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Messages); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch prev7 messages")
+	}
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Communities); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch prev7 communities")
+	}
 
 	if prev7Users > 0 {
 		stats.UserGrowthRate = (float64(stats.NewUsers7d) - float64(prev7Users)) / float64(prev7Users) * 100
@@ -205,7 +240,9 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 		stats.MessageGrowthRate = (float64(stats.Messages7d) - float64(prev7Messages)) / float64(prev7Messages) * 100
 	}
 	var newCommunities7d int64
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '7 days'`).Scan(&newCommunities7d)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '7 days'`).Scan(&newCommunities7d); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch new communities 7d")
+	}
 	if prev7Communities > 0 {
 		stats.CommunityGrowthRate = (float64(newCommunities7d) - float64(prev7Communities)) / float64(prev7Communities) * 100
 	}
@@ -286,6 +323,11 @@ func (s *Service) getTopCommunities(ctx context.Context) []CommunityStat {
 		}
 		communities = append(communities, cs)
 	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating top community rows")
+	}
+
 	return communities
 }
 
@@ -309,9 +351,14 @@ func (s *Service) getActiveHours(ctx context.Context) []HourlyStat {
 		var h int
 		var c int64
 		if err := rows.Scan(&h, &c); err != nil {
+			log.Warn().Err(err).Msg("Failed to scan active hour row")
 			continue
 		}
 		hourMap[h] = c
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating active hour rows")
 	}
 
 	// Fill all 24 hours with zero counts for missing hours
@@ -342,9 +389,14 @@ func (s *Service) getActiveWeekdays(ctx context.Context) []DailyStat {
 		var d int
 		var c int64
 		if err := rows.Scan(&d, &c); err != nil {
+			log.Warn().Err(err).Msg("Failed to scan active weekday row")
 			continue
 		}
 		dayMap[d] = c
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating active weekday rows")
 	}
 
 	var days []DailyStat
@@ -368,6 +420,10 @@ func (s *Service) getCountOverTime(ctx context.Context, query string) ([]DataPoi
 			return nil, err
 		}
 		points = append(points, dp)
+	}
+
+	if err := rows.Err(); err != nil {
+		return points, err
 	}
 
 	points = fillMissingDays(points, 30)
