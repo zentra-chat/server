@@ -725,6 +725,11 @@ func (s *Service) GetUserCommunities(ctx context.Context, userID uuid.UUID) ([]*
 		communities = append(communities, c)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate user communities rows")
+		return nil, err
+	}
+
 	return communities, nil
 }
 
@@ -769,6 +774,11 @@ func (s *Service) DiscoverCommunities(ctx context.Context, query string, limit, 
 			return nil, 0, err
 		}
 		communities = append(communities, c)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate discover communities rows")
+		return nil, 0, err
 	}
 
 	return communities, total, nil
@@ -983,6 +993,11 @@ func (s *Service) GetMembers(ctx context.Context, communityID uuid.UUID, limit, 
 		members = append(members, m)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate member rows")
+		return nil, 0, err
+	}
+
 	if len(members) > 0 {
 		memberIDs := make([]uuid.UUID, 0, len(members))
 		memberByID := make(map[uuid.UUID]*models.CommunityMemberWithUser, len(members))
@@ -1017,6 +1032,11 @@ func (s *Service) GetMembers(ctx context.Context, communityID uuid.UUID, limit, 
 			if member, ok := memberByID[memberID]; ok {
 				member.Roles = append(member.Roles, r)
 			}
+		}
+
+		if err := rows.Err(); err != nil {
+			log.Warn().Err(err).Msg("Failed to iterate member roles rows")
+			return nil, 0, err
 		}
 
 		defaultRole, err := s.GetDefaultRole(ctx, communityID)
@@ -1301,6 +1321,11 @@ func (s *Service) GetBans(ctx context.Context, communityID, actorID uuid.UUID) (
 		bans = append(bans, ban)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate ban rows")
+		return nil, err
+	}
+
 	return bans, nil
 }
 
@@ -1366,6 +1391,11 @@ func (s *Service) GetAuditLogs(ctx context.Context, communityID, actorID uuid.UU
 		}
 		entry.Actor = actor
 		logs = append(logs, entry)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate audit log rows")
+		return nil, 0, err
 	}
 
 	return logs, total, nil
@@ -1466,6 +1496,11 @@ func (s *Service) GetInvites(ctx context.Context, communityID, userID uuid.UUID)
 		invites = append(invites, i)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate invite rows")
+		return nil, err
+	}
+
 	return invites, nil
 }
 
@@ -1523,6 +1558,11 @@ func (s *Service) GetRoles(ctx context.Context, communityID uuid.UUID) ([]*model
 		roles = append(roles, r)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate role rows")
+		return nil, err
+	}
+
 	return roles, nil
 }
 
@@ -1545,10 +1585,12 @@ func (s *Service) CreateRole(ctx context.Context, communityID, userID uuid.UUID,
 
 	// Get max position
 	var maxPos int
-	s.db.QueryRow(ctx,
+	if err := s.db.QueryRow(ctx,
 		`SELECT COALESCE(MAX(position), 0) FROM roles WHERE community_id = $1`,
 		communityID,
-	).Scan(&maxPos)
+	).Scan(&maxPos); err != nil {
+		log.Warn().Err(err).Msg("Failed to get max role position")
+	}
 
 	role := &models.Role{
 		ID:          uuid.New(),
@@ -1725,6 +1767,11 @@ func (s *Service) GetMemberRoles(ctx context.Context, communityID, userID uuid.U
 		roles = append(roles, r)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate member roles rows")
+		return nil, err
+	}
+
 	if len(roles) == 0 {
 		defaultRole, err := s.GetDefaultRole(ctx, communityID)
 		if err == nil && defaultRole != nil {
@@ -1757,6 +1804,11 @@ func (s *Service) GetMemberRoleIDs(ctx context.Context, communityID, userID uuid
 			return nil, err
 		}
 		roleIDs = append(roleIDs, roleID)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate member role ID rows")
+		return nil, err
 	}
 
 	return roleIDs, nil
@@ -1813,6 +1865,11 @@ func (s *Service) SetMemberRoles(ctx context.Context, communityID, actorID, targ
 			if !isDefault {
 				filteredIDs = append(filteredIDs, roleID)
 			}
+		}
+
+		if err := rows.Err(); err != nil {
+			log.Warn().Err(err).Msg("Failed to iterate set member roles rows")
+			return err
 		}
 
 		if len(foundIDs) != len(roleIDList) {

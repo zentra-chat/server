@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
 	"github.com/nfnt/resize"
+	"github.com/rs/zerolog/log"
 	"github.com/zentra/server/internal/models"
 )
 
@@ -258,6 +259,11 @@ func (s *Service) GetCommunityEmojis(ctx context.Context, communityID, userID uu
 		emojis = append(emojis, e)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate emoji rows")
+		return nil, err
+	}
+
 	if emojis == nil {
 		emojis = []models.CustomEmoji{}
 	}
@@ -291,6 +297,11 @@ func (s *Service) GetAllAccessibleEmojis(ctx context.Context, userID uuid.UUID) 
 			return nil, fmt.Errorf("failed to scan emoji: %w", err)
 		}
 		emojis = append(emojis, e)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate accessible emoji rows")
+		return nil, err
 	}
 
 	if emojis == nil {

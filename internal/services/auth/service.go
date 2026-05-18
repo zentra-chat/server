@@ -211,7 +211,9 @@ func (s *Service) Register(ctx context.Context, req *RegisterRequest, clientIP s
 
 	// Auto-promote first user to admin
 	var adminExists bool
-	_ = s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE is_admin = TRUE)`).Scan(&adminExists)
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE is_admin = TRUE)`).Scan(&adminExists); err != nil {
+		log.Warn().Err(err).Msg("Failed to check if admin exists")
+	}
 	if !adminExists {
 		_, err = s.db.Exec(ctx, `UPDATE users SET is_admin = TRUE WHERE id = $1`, user.ID)
 		if err != nil {

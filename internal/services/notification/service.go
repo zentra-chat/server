@@ -123,6 +123,9 @@ func (s *Service) getDMParticipants(ctx context.Context, conversationID uuid.UUI
 			ids = append(ids, id)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate DM participant rows")
+	}
 	return ids, nil
 }
 
@@ -167,6 +170,9 @@ func (s *Service) GetNotifications(ctx context.Context, userID uuid.UUID, limit,
 			continue
 		}
 		notifications = append(notifications, n)
+	}
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate notification rows")
 	}
 	if notifications == nil {
 		notifications = []*models.Notification{}
@@ -252,6 +258,9 @@ func (s *Service) GetMessageMentions(ctx context.Context, messageID uuid.UUID) (
 		); err == nil {
 			mentions = append(mentions, m)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate message mention rows")
 	}
 	if mentions == nil {
 		mentions = []*models.MessageMention{}
@@ -507,6 +516,9 @@ func (s *Service) getRoleMembers(ctx context.Context, roleID uuid.UUID) ([]uuid.
 			ids = append(ids, id)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate role member rows")
+	}
 	return ids, nil
 }
 
@@ -529,6 +541,9 @@ func (s *Service) getCommunityMembers(ctx context.Context, communityID uuid.UUID
 		if err := rows.Scan(&id); err == nil {
 			ids = append(ids, id)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate community member rows")
 	}
 	return ids, nil
 }

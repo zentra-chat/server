@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 	"github.com/zentra/server/internal/models"
 	"github.com/zentra/server/internal/services/channeltype"
 	"github.com/zentra/server/internal/services/community"
@@ -69,10 +70,12 @@ func (s *Service) CreateChannel(ctx context.Context, communityID, userID uuid.UU
 
 	// Get max position
 	var maxPos int
-	s.db.QueryRow(ctx,
+	if err := s.db.QueryRow(ctx,
 		`SELECT COALESCE(MAX(position), -1) FROM channels WHERE community_id = $1`,
 		communityID,
-	).Scan(&maxPos)
+	).Scan(&maxPos); err != nil {
+		log.Warn().Err(err).Msg("Failed to get max channel position")
+	}
 
 	channel := &models.Channel{
 		ID:              uuid.New(),
@@ -152,6 +155,11 @@ func (s *Service) GetCommunityChannels(ctx context.Context, communityID uuid.UUI
 			return nil, err
 		}
 		channels = append(channels, c)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate channel rows")
+		return nil, err
 	}
 
 	return channels, nil
@@ -255,10 +263,12 @@ func (s *Service) CreateCategory(ctx context.Context, communityID, userID uuid.U
 	}
 
 	var maxPos int
-	s.db.QueryRow(ctx,
+	if err := s.db.QueryRow(ctx,
 		`SELECT COALESCE(MAX(position), -1) FROM channel_categories WHERE community_id = $1`,
 		communityID,
-	).Scan(&maxPos)
+	).Scan(&maxPos); err != nil {
+		log.Warn().Err(err).Msg("Failed to get max category position")
+	}
 
 	category := &models.ChannelCategory{
 		ID:          uuid.New(),
@@ -300,6 +310,11 @@ func (s *Service) GetCategories(ctx context.Context, communityID uuid.UUID) ([]*
 			return nil, err
 		}
 		categories = append(categories, c)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate category rows")
+		return nil, err
 	}
 
 	return categories, nil
@@ -604,6 +619,11 @@ func (s *Service) getChannelPermissions(ctx context.Context, channelID, userID u
 
 		roleAllow |= allowPerms
 		roleDeny |= denyPerms
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate channel permission rows")
+		return 0, err
 	}
 
 	permissions := basePermissions

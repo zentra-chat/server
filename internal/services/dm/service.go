@@ -246,6 +246,11 @@ func (s *Service) ListConversations(ctx context.Context, userID uuid.UUID) ([]*D
 		responses = append(responses, resp)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over conversations")
+		return nil, err
+	}
+
 	return responses, nil
 }
 
@@ -361,6 +366,11 @@ func (s *Service) GetMessages(ctx context.Context, conversationID, userID uuid.U
 		}
 		messages = append(messages, response)
 		messageIDs = append(messageIDs, msg.ID)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over DM messages")
+		return nil, err
 	}
 
 	if len(messageIDs) > 0 {
@@ -777,6 +787,11 @@ func (s *Service) getParticipants(ctx context.Context, conversationID uuid.UUID)
 		participants = append(participants, user)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over participants")
+		return nil, err
+	}
+
 	return participants, nil
 }
 
@@ -846,10 +861,12 @@ func (s *Service) getUnreadCount(ctx context.Context, conversationID, userID uui
 	var count int
 	var lastRead *time.Time
 
-	_ = s.db.QueryRow(ctx,
+	if err := s.db.QueryRow(ctx,
 		`SELECT last_read_at FROM dm_participants WHERE conversation_id = $1 AND user_id = $2`,
 		conversationID, userID,
-	).Scan(&lastRead)
+	).Scan(&lastRead); err != nil {
+		log.Warn().Err(err).Msg("Failed to get last read timestamp for unread count")
+	}
 
 	if lastRead == nil {
 		lastReadTime := time.Unix(0, 0)
@@ -953,6 +970,11 @@ func (s *Service) getDmMessageAttachments(ctx context.Context, messageID uuid.UU
 		attachments = append(attachments, a)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over DM message attachments")
+		return nil, err
+	}
+
 	return attachments, nil
 }
 
@@ -981,6 +1003,10 @@ func (s *Service) batchGetDmAttachments(ctx context.Context, messageIDs []uuid.U
 		if dmMessageID != nil {
 			result[*dmMessageID] = append(result[*dmMessageID], a)
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over batch DM attachments")
 	}
 
 	return result

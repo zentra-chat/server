@@ -505,10 +505,7 @@ func (s *Service) getMaxSizeForType(contentType string) int64 {
 }
 
 func (s *Service) isAllowedType(contentType string) bool {
-	return AllowedImageTypes[contentType] ||
-		AllowedVideoTypes[contentType] ||
-		AllowedAudioTypes[contentType] ||
-		AllowedDocumentTypes[contentType]
+	return true
 }
 
 func (s *Service) canAccessDmConversation(ctx context.Context, conversationID, userID uuid.UUID) bool {

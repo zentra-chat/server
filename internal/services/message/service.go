@@ -412,6 +412,11 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 		messageIDs = append(messageIDs, msg.ID)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Error iterating over channel messages")
+		return nil, err
+	}
+
 	// Batch fetch attachments
 	if len(messageIDs) > 0 {
 		attachmentMap := s.batchGetAttachments(ctx, messageIDs)
@@ -720,6 +725,11 @@ func (s *Service) GetPinnedMessages(ctx context.Context, channelID, userID uuid.
 		})
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Error iterating over pinned messages")
+		return nil, err
+	}
+
 	return messages, nil
 }
 
@@ -786,6 +796,11 @@ func (s *Service) SearchMessages(ctx context.Context, channelID, userID uuid.UUI
 		})
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Error iterating over search results")
+		return nil, err
+	}
+
 	return messages, nil
 }
 
@@ -811,6 +826,11 @@ func (s *Service) getMessageAttachments(ctx context.Context, messageID uuid.UUID
 			return nil, err
 		}
 		attachments = append(attachments, a)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over message attachments")
+		return nil, err
 	}
 
 	return attachments, nil
@@ -882,6 +902,10 @@ func (s *Service) batchGetAttachments(ctx context.Context, messageIDs []uuid.UUI
 		if a.MessageID != nil {
 			result[*a.MessageID] = append(result[*a.MessageID], a)
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over batch attachments")
 	}
 
 	return result

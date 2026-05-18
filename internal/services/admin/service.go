@@ -488,6 +488,7 @@ func (s *Service) AddAdmin(ctx context.Context, actorID, targetUserID uuid.UUID)
 		targetUserID,
 	).Scan(&exists)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to check if user exists")
 		return err
 	}
 	if !exists {
@@ -501,6 +502,7 @@ func (s *Service) AddAdmin(ctx context.Context, actorID, targetUserID uuid.UUID)
 		targetUserID,
 	).Scan(&isAdmin)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to check if user is admin")
 		return err
 	}
 	if isAdmin {
@@ -511,7 +513,12 @@ func (s *Service) AddAdmin(ctx context.Context, actorID, targetUserID uuid.UUID)
 		`UPDATE users SET is_admin = TRUE WHERE id = $1`,
 		targetUserID,
 	)
-	return err
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to update user to admin")
+		return err
+	}
+
+	return nil
 }
 
 func (s *Service) RemoveAdmin(ctx context.Context, actorID, targetUserID uuid.UUID) error {
@@ -529,6 +536,7 @@ func (s *Service) RemoveAdmin(ctx context.Context, actorID, targetUserID uuid.UU
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrUserNotFound
 		}
+		log.Warn().Err(err).Msg("Failed to check admin status")
 		return err
 	}
 	if !isAdmin {
@@ -541,6 +549,7 @@ func (s *Service) RemoveAdmin(ctx context.Context, actorID, targetUserID uuid.UU
 		`SELECT COUNT(*) FROM users WHERE is_admin = TRUE AND deleted_at IS NULL`,
 	).Scan(&adminCount)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to count admins")
 		return err
 	}
 	if adminCount <= 1 {
@@ -551,7 +560,12 @@ func (s *Service) RemoveAdmin(ctx context.Context, actorID, targetUserID uuid.UU
 		`UPDATE users SET is_admin = FALSE WHERE id = $1`,
 		targetUserID,
 	)
-	return err
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to remove admin")
+		return err
+	}
+
+	return nil
 }
 
 // EnsureFirstUserIsAdmin checks if any admin exists and if not, makes the first user an admin
@@ -561,6 +575,7 @@ func (s *Service) EnsureFirstUserIsAdmin(ctx context.Context) error {
 		`SELECT EXISTS(SELECT 1 FROM users WHERE is_admin = TRUE AND deleted_at IS NULL)`,
 	).Scan(&adminExists)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to check if admin exists")
 		return err
 	}
 
@@ -573,6 +588,7 @@ func (s *Service) EnsureFirstUserIsAdmin(ctx context.Context) error {
 		`UPDATE users SET is_admin = TRUE WHERE id = (SELECT id FROM users WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1)`,
 	)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to promote first user to admin")
 		return err
 	}
 

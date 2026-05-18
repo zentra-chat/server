@@ -296,6 +296,11 @@ func (s *Service) SearchUsers(ctx context.Context, query string, limit, offset i
 		users = append(users, user)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over user search results")
+		return nil, 0, err
+	}
+
 	return users, total, nil
 }
 
@@ -638,6 +643,11 @@ func (s *Service) GetFriendRequests(ctx context.Context, userID uuid.UUID) (*mod
 		requests.Incoming = append(requests.Incoming, request)
 	}
 
+	if err := incomingRows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over incoming friend requests")
+		return nil, err
+	}
+
 	outgoingRows, err := s.db.Query(ctx,
 		`SELECT fr.created_at, u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
 		 FROM friend_requests fr
@@ -662,6 +672,11 @@ func (s *Service) GetFriendRequests(ctx context.Context, userID uuid.UUID) (*mod
 			return nil, err
 		}
 		requests.Outgoing = append(requests.Outgoing, request)
+	}
+
+	if err := outgoingRows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over outgoing friend requests")
+		return nil, err
 	}
 
 	return requests, nil
@@ -692,6 +707,11 @@ func (s *Service) GetFriends(ctx context.Context, userID uuid.UUID) ([]*models.P
 			return nil, err
 		}
 		friends = append(friends, friendUser)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over friends list")
+		return nil, err
 	}
 
 	return friends, nil
@@ -869,6 +889,11 @@ func (s *Service) GetBlockedUsers(ctx context.Context, userID uuid.UUID) ([]*mod
 			return nil, err
 		}
 		users = append(users, user)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over blocked users")
+		return nil, err
 	}
 
 	return users, nil

@@ -150,6 +150,10 @@ func (s *Service) DisconnectUser(ctx context.Context, userID uuid.UUID) ([]uuid.
 		channelIDs = append(channelIDs, channelID)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over voice channels for disconnect")
+	}
+
 	// Remove from all voice channels
 	err = s.leaveAllChannels(ctx, userID)
 	return channelIDs, err
@@ -244,6 +248,11 @@ func (s *Service) GetChannelVoiceStates(ctx context.Context, channelID uuid.UUID
 			continue
 		}
 		states = append(states, vs)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over voice states")
+		return nil, err
 	}
 
 	return states, nil
