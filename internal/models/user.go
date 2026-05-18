@@ -33,6 +33,7 @@ type User struct {
 	CreatedAt        time.Time  `json:"createdAt" db:"created_at"`
 	UpdatedAt        time.Time  `json:"updatedAt" db:"updated_at"`
 	LastSeenAt       *time.Time `json:"lastSeenAt,omitempty" db:"last_seen_at"`
+	IsAdmin          bool       `json:"isAdmin" db:"is_admin"`
 	DeletedAt        *time.Time `json:"-" db:"deleted_at"`
 }
 

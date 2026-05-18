@@ -209,6 +209,18 @@ func (s *Service) Register(ctx context.Context, req *RegisterRequest, clientIP s
 		return nil, err
 	}
 
+	// Auto-promote first user to admin
+	var adminExists bool
+	_ = s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE is_admin = TRUE)`).Scan(&adminExists)
+	if !adminExists {
+		_, err = s.db.Exec(ctx, `UPDATE users SET is_admin = TRUE WHERE id = $1`, user.ID)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to promote first user to admin")
+		} else {
+			log.Info().Str("userID", user.ID.String()).Msg("First user promoted to admin")
+		}
+	}
+
 	_, err = s.reconcilePortableProfile(ctx, user, req.PortableProfile)
 	if err != nil {
 		return nil, err
@@ -241,13 +253,14 @@ func (s *Service) Login(ctx context.Context, req *LoginRequest) (*AuthResponse, 
 	err := s.db.QueryRow(ctx,
 		`SELECT id, username, email, password_hash, display_name, avatar_url, bio, 
 		status, custom_status, email_verified, two_factor_enabled, two_factor_secret,
-		created_at, updated_at, last_seen_at
+		created_at, updated_at, last_seen_at, is_admin
 		FROM users WHERE (username = $1 OR email = $1) AND deleted_at IS NULL`,
 		req.Login,
 	).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.DisplayName,
 		&user.AvatarURL, &user.Bio, &user.Status, &user.CustomStatus, &user.EmailVerified,
 		&user.TwoFactorEnabled, &user.TwoFactorSecret, &user.CreatedAt, &user.UpdatedAt, &user.LastSeenAt,
+		&user.IsAdmin,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -372,7 +385,7 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*AuthR
 		`SELECT s.id, s.user_id, s.expires_at,
 		u.id, u.username, u.email, u.display_name, u.avatar_url, u.bio,
 		u.status, u.custom_status, u.email_verified, u.two_factor_enabled,
-		u.created_at, u.updated_at, u.last_seen_at
+		u.created_at, u.updated_at, u.last_seen_at, u.is_admin
 		FROM user_sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.refresh_token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW()`,
@@ -381,7 +394,7 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*AuthR
 		&session.ID, &session.UserID, &session.ExpiresAt,
 		&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.AvatarURL, &user.Bio,
 		&user.Status, &user.CustomStatus, &user.EmailVerified, &user.TwoFactorEnabled,
-		&user.CreatedAt, &user.UpdatedAt, &user.LastSeenAt,
+		&user.CreatedAt, &user.UpdatedAt, &user.LastSeenAt, &user.IsAdmin,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -811,7 +824,7 @@ func (s *Service) findUserByPortableIdentity(ctx context.Context, identityID str
 	err := s.db.QueryRow(ctx,
 		`SELECT u.id, u.username, u.email, u.password_hash, u.display_name, u.avatar_url, u.bio,
 		u.status, u.custom_status, u.email_verified, u.two_factor_enabled, u.two_factor_secret,
-		u.created_at, u.updated_at, u.last_seen_at
+		u.created_at, u.updated_at, u.last_seen_at, u.is_admin
 		FROM users u
 		JOIN user_settings us ON us.user_id = u.id
 		WHERE u.deleted_at IS NULL AND us.settings_json->>'portableIdentityId' = $1
@@ -821,6 +834,7 @@ func (s *Service) findUserByPortableIdentity(ctx context.Context, identityID str
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.DisplayName,
 		&user.AvatarURL, &user.Bio, &user.Status, &user.CustomStatus, &user.EmailVerified,
 		&user.TwoFactorEnabled, &user.TwoFactorSecret, &user.CreatedAt, &user.UpdatedAt, &user.LastSeenAt,
+		&user.IsAdmin,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

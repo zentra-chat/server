@@ -76,13 +76,14 @@ func (s *Service) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, 
 	user := &models.User{}
 	err := s.db.QueryRow(ctx,
 		`SELECT id, username, email, display_name, avatar_url, bio, status, custom_status,
-		email_verified, two_factor_enabled, created_at, updated_at, last_seen_at
+		email_verified, two_factor_enabled, created_at, updated_at, last_seen_at, is_admin
 		FROM users WHERE id = $1 AND deleted_at IS NULL`,
 		id,
 	).Scan(
 		&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.AvatarURL,
 		&user.Bio, &user.Status, &user.CustomStatus, &user.EmailVerified,
 		&user.TwoFactorEnabled, &user.CreatedAt, &user.UpdatedAt, &user.LastSeenAt,
+		&user.IsAdmin,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/zentra/server/config"
 	"github.com/zentra/server/internal/middleware"
+	"github.com/zentra/server/internal/services/admin"
 	"github.com/zentra/server/internal/services/auth"
 	"github.com/zentra/server/internal/services/channel"
 	"github.com/zentra/server/internal/services/channeltype"
@@ -128,6 +129,12 @@ func main() {
 	// Initialize plugin service
 	pluginService := plugin.NewService(db, channelTypeRegistry)
 
+	// Initialize admin service
+	adminService := admin.NewService(db)
+	if err := adminService.EnsureFirstUserIsAdmin(context.Background()); err != nil {
+		log.Warn().Err(err).Msg("Failed to ensure first user is admin")
+	}
+
 	// Initialize WebSocket hub
 	wsHub := websocket.NewHub(redisClient, channelService, userService, dmService, voiceService)
 	go wsHub.Run(context.Background())
@@ -152,6 +159,7 @@ func main() {
 	webhookHandler := webhook.NewHandler(webhookService)
 	notificationHandler := notification.NewHandler(notificationService)
 	pluginHandler := plugin.NewHandler(pluginService)
+	adminHandler := admin.NewHandler(adminService)
 	githubStatsService := githubstats.NewService(cfg.GitHub.Token)
 	githubStatsHandler := githubstats.NewHandler(githubStatsService)
 
@@ -212,6 +220,12 @@ func main() {
 			r.Mount("/notifications", notificationHandler.Routes())
 			r.Mount("/voice", voiceHandler.Routes())
 			r.Mount("/plugins", pluginHandler.Routes())
+
+			// Admin routes (require admin privileges)
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.AdminMiddleware(db))
+				r.Mount("/admin", adminHandler.Routes())
+			})
 		})
 	})
 
