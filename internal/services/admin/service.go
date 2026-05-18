@@ -94,10 +94,10 @@ type DashboardStats struct {
 
 // AdminUser is a public representation of an admin user
 type AdminUser struct {
-	ID        string  `json:"id"`
-	Username  string  `json:"username"`
-	AvatarURL *string `json:"avatarUrl,omitempty"`
-	CreatedAt string  `json:"createdAt"`
+	ID        string    `json:"id"`
+	Username  string    `json:"username"`
+	AvatarURL *string   `json:"avatarUrl,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 func (s *Service) GetDashboard(ctx context.Context) (*DashboardStats, error) {
@@ -397,6 +397,7 @@ func (s *Service) GetAdmins(ctx context.Context) ([]AdminUser, error) {
 		`SELECT id, username, avatar_url, created_at FROM users WHERE is_admin = TRUE AND deleted_at IS NULL ORDER BY created_at ASC`,
 	)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to query admins")
 		return nil, err
 	}
 	defer rows.Close()
@@ -405,9 +406,15 @@ func (s *Service) GetAdmins(ctx context.Context) ([]AdminUser, error) {
 	for rows.Next() {
 		var a AdminUser
 		if err := rows.Scan(&a.ID, &a.Username, &a.AvatarURL, &a.CreatedAt); err != nil {
+			log.Warn().Err(err).Msg("Failed to scan admin row")
 			return nil, err
 		}
 		admins = append(admins, a)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating admin rows")
+		return nil, err
 	}
 
 	return admins, nil
