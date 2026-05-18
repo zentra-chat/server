@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,52 @@ func NewService(db *pgxpool.Pool) *Service {
 // DataPoint represents a metric measurement at a point in time
 type DataPoint struct {
 	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+// AnalyticsStats holds the comprehensive instance analytics
+type AnalyticsStats struct {
+	TotalUsers       int64       `json:"totalUsers"`
+	TotalMessages    int64       `json:"totalMessages"`
+	TotalCommunities int64       `json:"totalCommunities"`
+	TotalChannels    int64       `json:"totalChannels"`
+	OnlineUsers      int64       `json:"onlineUsers"`
+	MessagesToday    int64       `json:"messagesToday"`
+	NewUsersToday    int64       `json:"newUsersToday"`
+	ActiveUsers7d    int64       `json:"activeUsers7d"`
+	NewUsers7d       int64       `json:"newUsers7d"`
+	NewUsers30d      int64       `json:"newUsers30d"`
+	Messages7d       int64       `json:"messages7d"`
+	Messages30d      int64       `json:"messages30d"`
+	AvgMessagesPerUser     float64 `json:"avgMessagesPerUser"`
+	AvgMembersPerCommunity  float64 `json:"avgMembersPerCommunity"`
+	UserGrowthRate         float64 `json:"userGrowthRate"`
+	MessageGrowthRate      float64 `json:"messageGrowthRate"`
+	CommunityGrowthRate    float64 `json:"communityGrowthRate"`
+	UsersOverTime          []DataPoint `json:"usersOverTime"`
+	MessagesOverTime       []DataPoint `json:"messagesOverTime"`
+	CommunitiesOverTime    []DataPoint `json:"communitiesOverTime"`
+	ActiveUsersOverTime    []DataPoint `json:"activeUsersOverTime"`
+	TopCommunities         []CommunityStat `json:"topCommunities"`
+	ActiveHours            []HourlyStat   `json:"activeHours"`
+	ActiveWeekdays         []DailyStat    `json:"activeWeekdays"`
+}
+
+type CommunityStat struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	MemberCount  int    `json:"memberCount"`
+	MessageCount int64  `json:"messageCount"`
+	CreatedAt    string `json:"createdAt"`
+}
+
+type HourlyStat struct {
+	Hour  string `json:"hour"`
+	Count int64  `json:"count"`
+}
+
+type DailyStat struct {
+	Day   string `json:"day"`
 	Count int64  `json:"count"`
 }
 
@@ -99,6 +146,212 @@ func (s *Service) GetDashboard(ctx context.Context) (*DashboardStats, error) {
 	}
 
 	return stats, nil
+}
+
+func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
+	stats := &AnalyticsStats{}
+
+	// Total users
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL`).Scan(&stats.TotalUsers)
+	// Total messages
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages`).Scan(&stats.TotalMessages)
+	// Total communities
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL`).Scan(&stats.TotalCommunities)
+	// Total channels
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM channels`).Scan(&stats.TotalChannels)
+
+	// Online users
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE status = 'online' AND deleted_at IS NULL`).Scan(&stats.OnlineUsers)
+
+	// Messages today
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= CURRENT_DATE`).Scan(&stats.MessagesToday)
+
+	// New users today
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= CURRENT_DATE`).Scan(&stats.NewUsersToday)
+
+	// Active users in the last 7 days (users who sent a message)
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(DISTINCT author_id) FROM messages WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.ActiveUsers7d)
+
+	// New users in the last 7 days
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.NewUsers7d)
+
+	// New users in the last 30 days
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '30 days'`).Scan(&stats.NewUsers30d)
+
+	// Messages in the last 7 days
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.Messages7d)
+
+	// Messages in the last 30 days
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days'`).Scan(&stats.Messages30d)
+
+	// Average messages per user
+	if stats.TotalUsers > 0 {
+		stats.AvgMessagesPerUser = float64(stats.TotalMessages) / float64(stats.TotalUsers)
+	}
+
+	// Average members per community (only communities with members)
+	_ = s.db.QueryRow(ctx, `SELECT COALESCE(AVG(member_count), 0) FROM communities WHERE deleted_at IS NULL AND member_count > 0`).Scan(&stats.AvgMembersPerCommunity)
+
+	// Growth rates (compare last 7 days to previous 7 days)
+	var prev7Users, prev7Messages, prev7Communities int64
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Users)
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Messages)
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Communities)
+
+	if prev7Users > 0 {
+		stats.UserGrowthRate = (float64(stats.NewUsers7d) - float64(prev7Users)) / float64(prev7Users) * 100
+	}
+	if prev7Messages > 0 {
+		stats.MessageGrowthRate = (float64(stats.Messages7d) - float64(prev7Messages)) / float64(prev7Messages) * 100
+	}
+	var newCommunities7d int64
+	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '7 days'`).Scan(&newCommunities7d)
+	if prev7Communities > 0 {
+		stats.CommunityGrowthRate = (float64(newCommunities7d) - float64(prev7Communities)) / float64(prev7Communities) * 100
+	}
+	// Communities over time (last 30 days)
+	var err error
+	stats.UsersOverTime, err = s.getCountOverTime(ctx,
+		`SELECT DATE(created_at)::text, COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '30 days' GROUP BY DATE(created_at) ORDER BY DATE(created_at)`,
+	)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch users over time")
+	}
+
+	stats.MessagesOverTime, err = s.getCountOverTime(ctx,
+		`SELECT DATE(created_at)::text, COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' GROUP BY DATE(created_at) ORDER BY DATE(created_at)`,
+	)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch messages over time")
+	}
+
+	stats.CommunitiesOverTime, err = s.getCountOverTime(ctx,
+		`SELECT DATE(created_at)::text, COUNT(*) FROM communities WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '30 days' GROUP BY DATE(created_at) ORDER BY DATE(created_at)`,
+	)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch communities over time")
+	}
+
+	// Active users over time (distinct users who sent a message each day)
+	stats.ActiveUsersOverTime, err = s.getCountOverTime(ctx,
+		`SELECT DATE(created_at)::text, COUNT(DISTINCT author_id) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' GROUP BY DATE(created_at) ORDER BY DATE(created_at)`,
+	)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch active users over time")
+	}
+
+	// Top communities by member count + message count
+	stats.TopCommunities = s.getTopCommunities(ctx)
+
+	// Active hours (messages by hour in the last 30 days)
+	stats.ActiveHours = s.getActiveHours(ctx)
+
+	// Active weekdays (messages by day of week in the last 30 days)
+	stats.ActiveWeekdays = s.getActiveWeekdays(ctx)
+
+	return stats, nil
+}
+
+func (s *Service) getTopCommunities(ctx context.Context) []CommunityStat {
+	query := `
+		SELECT c.id, c.name, c.member_count,
+			COALESCE(msg_counts.msg_count, 0) as message_count,
+			c.created_at::text
+		FROM communities c
+		LEFT JOIN (
+			SELECT ch.community_id, COUNT(m.id) as msg_count
+			FROM channels ch
+			LEFT JOIN messages m ON m.channel_id = ch.id AND m.deleted_at IS NULL
+			WHERE ch.community_id IS NOT NULL
+			GROUP BY ch.community_id
+		) msg_counts ON msg_counts.community_id = c.id
+		WHERE c.deleted_at IS NULL
+		ORDER BY c.member_count DESC
+		LIMIT 10
+	`
+
+	rows, err := s.db.Query(ctx, query)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch top communities")
+		return nil
+	}
+	defer rows.Close()
+
+	var communities []CommunityStat
+	for rows.Next() {
+		var cs CommunityStat
+		if err := rows.Scan(&cs.ID, &cs.Name, &cs.MemberCount, &cs.MessageCount, &cs.CreatedAt); err != nil {
+			log.Warn().Err(err).Msg("Failed to scan community stat")
+			continue
+		}
+		communities = append(communities, cs)
+	}
+	return communities
+}
+
+func (s *Service) getActiveHours(ctx context.Context) []HourlyStat {
+	rows, err := s.db.Query(ctx,
+		`SELECT EXTRACT(HOUR FROM created_at)::int as hour, COUNT(*) as count
+		FROM messages
+		WHERE created_at >= NOW() - INTERVAL '30 days'
+		GROUP BY EXTRACT(HOUR FROM created_at)
+		ORDER BY hour`,
+	)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch active hours")
+		return nil
+	}
+	defer rows.Close()
+
+	var hours []HourlyStat
+	hourMap := make(map[int]int64)
+	for rows.Next() {
+		var h int
+		var c int64
+		if err := rows.Scan(&h, &c); err != nil {
+			continue
+		}
+		hourMap[h] = c
+	}
+
+	// Fill all 24 hours with zero counts for missing hours
+	for i := 0; i < 24; i++ {
+		label := fmt.Sprintf("%02d:00", i)
+		hours = append(hours, HourlyStat{Hour: label, Count: hourMap[i]})
+	}
+	return hours
+}
+
+func (s *Service) getActiveWeekdays(ctx context.Context) []DailyStat {
+	rows, err := s.db.Query(ctx,
+		`SELECT EXTRACT(DOW FROM created_at)::int as dow, COUNT(*) as count
+		FROM messages
+		WHERE created_at >= NOW() - INTERVAL '30 days'
+		GROUP BY EXTRACT(DOW FROM created_at)
+		ORDER BY dow`,
+	)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch active weekdays")
+		return nil
+	}
+	defer rows.Close()
+
+	dayNames := []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
+	dayMap := make(map[int]int64)
+	for rows.Next() {
+		var d int
+		var c int64
+		if err := rows.Scan(&d, &c); err != nil {
+			continue
+		}
+		dayMap[d] = c
+	}
+
+	var days []DailyStat
+	for i := 0; i < 7; i++ {
+		days = append(days, DailyStat{Day: dayNames[i], Count: dayMap[i]})
+	}
+	return days
 }
 
 func (s *Service) getCountOverTime(ctx context.Context, query string) ([]DataPoint, error) {

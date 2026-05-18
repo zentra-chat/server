@@ -21,6 +21,7 @@ func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	r.Get("/dashboard", h.GetDashboard)
+	r.Get("/analytics", h.GetAnalytics)
 	r.Get("/admins", h.ListAdmins)
 	r.Post("/admins", h.AddAdmin)
 	r.Delete("/admins/{userId}", h.RemoveAdmin)
@@ -32,6 +33,16 @@ func (h *Handler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.service.GetDashboard(r.Context())
 	if err != nil {
 		utils.RespondError(w, http.StatusInternalServerError, "Failed to fetch dashboard stats")
+		return
+	}
+
+	utils.RespondSuccess(w, stats)
+}
+
+func (h *Handler) GetAnalytics(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.service.GetAnalytics(r.Context())
+	if err != nil {
+		utils.RespondError(w, http.StatusInternalServerError, "Failed to fetch analytics stats")
 		return
 	}
 
