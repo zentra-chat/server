@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
 	"github.com/nfnt/resize"
+	"github.com/rs/zerolog/log"
 	"github.com/zentra/server/internal/models"
 	"github.com/zentra/server/internal/services/community"
 )
@@ -30,6 +31,7 @@ var (
 	ErrUploadFailed       = errors.New("upload failed")
 	ErrAttachmentNotFound = errors.New("attachment not found")
 	ErrNotParticipant     = errors.New("not a participant")
+	ErrAccessDenied       = errors.New("access denied")
 )
 
 // File size limits
@@ -469,6 +471,55 @@ func (s *Service) canAccessDmConversation(ctx context.Context, conversationID, u
 		conversationID, userID,
 	).Scan(&exists)
 	return err == nil && exists
+}
+
+func (s *Service) canAccessAttachment(ctx context.Context, attachmentID, userID uuid.UUID) error {
+	var messageID, dmConversationID *uuid.UUID
+	err := s.db.QueryRow(ctx,
+		`SELECT message_id, dm_conversation_id FROM message_attachments WHERE id = $1`,
+		attachmentID,
+	).Scan(&messageID, &dmConversationID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrAttachmentNotFound
+		}
+		log.Warn().Err(err).Msg("failed to get attachment parent info")
+		return fmt.Errorf("failed to get attachment parent: %w", err)
+	}
+
+	if messageID != nil {
+		var channelID uuid.UUID
+		err := s.db.QueryRow(ctx,
+			`SELECT channel_id FROM messages WHERE id = $1`, messageID,
+		).Scan(&channelID)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to get message channel")
+			return fmt.Errorf("failed to get message channel: %w", err)
+		}
+
+		var communityID uuid.UUID
+		err = s.db.QueryRow(ctx,
+			`SELECT community_id FROM channels WHERE id = $1`, channelID,
+		).Scan(&communityID)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to get channel community")
+			return fmt.Errorf("failed to get channel community: %w", err)
+		}
+
+		if !s.communityService.IsMember(ctx, communityID, userID) {
+			return ErrAccessDenied
+		}
+		return nil
+	}
+
+	if dmConversationID != nil {
+		if !s.canAccessDmConversation(ctx, *dmConversationID, userID) {
+			return ErrAccessDenied
+		}
+		return nil
+	}
+
+	return ErrAccessDenied
 }
 
 // generateThumbnail creates a thumbnail for image attachments

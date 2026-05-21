@@ -144,18 +144,29 @@ func (h *Handler) UploadDmAttachment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetAttachment(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.RequireAuth(r.Context())
+	if err != nil {
+		utils.RespondError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
 	attachmentID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		utils.RespondError(w, http.StatusBadRequest, "Invalid attachment ID")
 		return
 	}
 
-	attachment, err := h.service.GetAttachment(r.Context(), attachmentID)
-	if err != nil {
+	if err := h.service.canAccessAttachment(r.Context(), attachmentID, userID); err != nil {
 		if err == ErrAttachmentNotFound {
 			utils.RespondError(w, http.StatusNotFound, "Attachment not found")
 			return
 		}
+		utils.RespondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	attachment, err := h.service.GetAttachment(r.Context(), attachmentID)
+	if err != nil {
 		utils.RespondError(w, http.StatusInternalServerError, "Failed to get attachment")
 		return
 	}
@@ -189,9 +200,24 @@ func (h *Handler) DeleteAttachment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetPresignedURL(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.RequireAuth(r.Context())
+	if err != nil {
+		utils.RespondError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
 	attachmentID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		utils.RespondError(w, http.StatusBadRequest, "Invalid attachment ID")
+		return
+	}
+
+	if err := h.service.canAccessAttachment(r.Context(), attachmentID, userID); err != nil {
+		if err == ErrAttachmentNotFound {
+			utils.RespondError(w, http.StatusNotFound, "Attachment not found")
+			return
+		}
+		utils.RespondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
 
