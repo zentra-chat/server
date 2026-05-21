@@ -107,3 +107,14 @@ type ChannelWithCategory struct {
 	Channel
 	CategoryName *string `json:"categoryName,omitempty" db:"category_name"`
 }
+
+type ChannelReadState struct {
+	UserID      uuid.UUID `json:"userId" db:"user_id"`
+	ChannelID   uuid.UUID `json:"channelId" db:"channel_id"`
+	LastReadAt  time.Time `json:"lastReadAt" db:"last_read_at"`
+}
+
+type UnreadCount struct {
+	ChannelID uuid.UUID `json:"channelId" db:"channel_id"`
+	Count     int       `json:"count" db:"unread_count"`
+}

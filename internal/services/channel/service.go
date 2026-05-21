@@ -486,6 +486,116 @@ func (s *Service) DeleteChannelPermission(ctx context.Context, channelID, userID
 	return err
 }
 
+// Channel Read State
+func (s *Service) MarkRead(ctx context.Context, channelID, userID uuid.UUID) error {
+	_, err := s.db.Exec(ctx,
+		`INSERT INTO channel_read_states (user_id, channel_id, last_read_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (user_id, channel_id)
+		DO UPDATE SET last_read_at = NOW()`,
+		userID, channelID,
+	)
+	return err
+}
+
+func (s *Service) GetUnreadCount(ctx context.Context, channelID, userID uuid.UUID) (int, error) {
+	var count int
+	var lastRead *time.Time
+
+	err := s.db.QueryRow(ctx,
+		`SELECT last_read_at FROM channel_read_states WHERE user_id = $1 AND channel_id = $2`,
+		userID, channelID,
+	).Scan(&lastRead)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		log.Warn().Err(err).Msg("Failed to get channel read state")
+		return 0, nil
+	}
+
+	var since time.Time
+	if lastRead != nil {
+		since = *lastRead
+	} else {
+		since = time.Unix(0, 0)
+	}
+
+	err = s.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM messages
+		WHERE channel_id = $1 AND deleted_at IS NULL
+		AND created_at > $2 AND author_id <> $3`,
+		channelID, since, userID,
+	).Scan(&count)
+
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to count unread messages")
+		return 0, nil
+	}
+
+	return count, nil
+}
+
+type CommunityUnreadResponse struct {
+	Unread   map[string]int `json:"unread"`
+	Mentions map[string]int `json:"mentions"`
+}
+
+func (s *Service) GetCommunityUnreadCounts(ctx context.Context, communityID, userID uuid.UUID) (*CommunityUnreadResponse, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT c.id,
+			COALESCE((
+				SELECT COUNT(*) FROM messages m
+				WHERE m.channel_id = c.id AND m.deleted_at IS NULL
+				AND m.created_at > COALESCE(crs.last_read_at, '1970-01-01'::timestamptz)
+				AND m.author_id <> $2
+			), 0)::int,
+			COALESCE(mn.mention_count, 0)::int
+		FROM channels c
+		LEFT JOIN channel_read_states crs ON crs.channel_id = c.id AND crs.user_id = $2
+		LEFT JOIN (
+			SELECT n.channel_id, COUNT(*)::int AS mention_count
+			FROM notifications n
+			WHERE n.user_id = $2 AND n.is_read = FALSE
+			AND n.type IN ('mention_user','mention_role','mention_everyone','mention_here','reply')
+			AND n.channel_id IN (SELECT id FROM channels WHERE community_id = $1)
+			GROUP BY n.channel_id
+		) mn ON mn.channel_id = c.id
+		WHERE c.community_id = $1
+		ORDER BY c.position`,
+		communityID, userID,
+	)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get community unread counts")
+		return nil, err
+	}
+	defer rows.Close()
+
+	unread := make(map[string]int)
+	mentions := make(map[string]int)
+
+	for rows.Next() {
+		var channelID uuid.UUID
+		var unreadCount int
+		var mentionCount int
+		if err := rows.Scan(&channelID, &unreadCount, &mentionCount); err != nil {
+			log.Warn().Err(err).Msg("Failed to scan unread count row")
+			continue
+		}
+		if unreadCount > 0 {
+			unread[channelID.String()] = unreadCount
+		}
+		if mentionCount > 0 {
+			mentions[channelID.String()] = mentionCount
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate unread count rows")
+		return nil, err
+	}
+
+	return &CommunityUnreadResponse{Unread: unread, Mentions: mentions}, nil
+}
+
 // Permission helpers
 // I don't like this function, but it will do for now.
 func (s *Service) requireChannelPermission(ctx context.Context, communityID, userID uuid.UUID, permission int64) error {

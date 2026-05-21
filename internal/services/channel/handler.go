@@ -20,6 +20,9 @@ func NewHandler(service *Service) *Handler {
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
+	// Unread counts for all channels in a community
+	r.Get("/communities/{communityId}/unread", h.GetCommunityUnreadCounts)
+
 	// Community-scoped channel routes
 	// This needs to be changed so we do not have two references to "channels" in the URL
 	// I am keeping it like this for now to avoid breaking changes
@@ -43,6 +46,7 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/", h.GetChannel)
 		r.Patch("/", h.UpdateChannel)
 		r.Delete("/", h.DeleteChannel)
+		r.Post("/read", h.MarkRead)
 
 		// Permissions
 		r.Get("/permissions", h.GetChannelPermissions)
@@ -528,4 +532,57 @@ func (h *Handler) DeleteChannelPermission(w http.ResponseWriter, r *http.Request
 	}
 
 	utils.RespondNoContent(w)
+}
+
+func (h *Handler) MarkRead(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.RequireAuth(r.Context())
+	if err != nil {
+		utils.RespondError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	channelID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Invalid channel ID")
+		return
+	}
+
+	if !h.service.CanAccessChannel(r.Context(), channelID, userID) {
+		utils.RespondError(w, http.StatusForbidden, "Cannot access this channel")
+		return
+	}
+
+	if err := h.service.MarkRead(r.Context(), channelID, userID); err != nil {
+		utils.RespondError(w, http.StatusInternalServerError, "Failed to mark channel as read")
+		return
+	}
+
+	utils.RespondNoContent(w)
+}
+
+func (h *Handler) GetCommunityUnreadCounts(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.RequireAuth(r.Context())
+	if err != nil {
+		utils.RespondError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	communityID, err := uuid.Parse(chi.URLParam(r, "communityId"))
+	if err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Invalid community ID")
+		return
+	}
+
+	if !h.service.communityService.IsMember(r.Context(), communityID, userID) {
+		utils.RespondError(w, http.StatusForbidden, "Not a member of this community")
+		return
+	}
+
+	resp, err := h.service.GetCommunityUnreadCounts(r.Context(), communityID, userID)
+	if err != nil {
+		utils.RespondError(w, http.StatusInternalServerError, "Failed to get unread counts")
+		return
+	}
+
+	utils.RespondSuccess(w, resp)
 }
