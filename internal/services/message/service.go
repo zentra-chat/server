@@ -243,6 +243,22 @@ func (s *Service) CreateMessage(ctx context.Context, channelID, userID uuid.UUID
 
 // GetMessage retrieves a single message
 func (s *Service) GetMessage(ctx context.Context, messageID, userID uuid.UUID) (*MessageResponse, error) {
+	// Check access first before querying full message data.
+	// This prevents leaking message existence via timing side-channels
+	// and avoids expensive JOINs/decryption for unauthorized users.
+	var channelID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT channel_id FROM messages WHERE id = $1 AND deleted_at IS NULL`, messageID).Scan(&channelID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrMessageNotFound
+		}
+		log.Error().Err(err).Msg("Failed to look up message channel in GetMessage")
+		return nil, err
+	}
+	if !s.channelService.CanAccessChannel(ctx, channelID, userID) {
+		return nil, ErrInsufficientPerms
+	}
+
 	query := `
 		SELECT m.id, m.channel_id, m.author_id, m.encrypted_content, m.reply_to_id,
 		       m.link_previews, m.is_pinned, m.is_edited, m.reactions, m.created_at, m.updated_at,
@@ -256,7 +272,7 @@ func (s *Service) GetMessage(ctx context.Context, messageID, userID uuid.UUID) (
 	var linkPreviewRaw []byte
 	var author models.PublicUser
 
-	err := s.db.QueryRow(ctx, query, messageID).Scan(
+	err = s.db.QueryRow(ctx, query, messageID).Scan(
 		&msg.ID, &msg.ChannelID, &msg.AuthorID, &encContent,
 		&msg.ReplyToID, &linkPreviewRaw, &msg.IsPinned, &msg.IsEdited, &msg.Reactions, &msg.CreatedAt, &msg.UpdatedAt,
 		&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
@@ -267,11 +283,6 @@ func (s *Service) GetMessage(ctx context.Context, messageID, userID uuid.UUID) (
 		}
 		log.Error().Err(err).Msg("Failed to scan message in GetMessage")
 		return nil, err
-	}
-
-	// Check access
-	if !s.channelService.CanAccessChannel(ctx, msg.ChannelID, userID) {
-		return nil, ErrInsufficientPerms
 	}
 
 	// Decrypt content
