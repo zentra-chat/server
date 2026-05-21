@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 	"github.com/zentra/server/internal/models"
+	"github.com/zentra/server/internal/utils"
 	"github.com/zentra/server/pkg/database"
 )
 
@@ -259,6 +259,8 @@ func (s *Service) SearchUsers(ctx context.Context, query string, limit, offset i
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
+
+	query = utils.SanitizeSearchQuery(query)
 
 	var total int64
 	err := s.db.QueryRow(ctx,

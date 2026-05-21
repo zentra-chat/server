@@ -109,6 +109,19 @@ func SanitizeHTML(s string) string {
 	return re.ReplaceAllString(s, "")
 }
 
+// SanitizeSearchQuery sanitizes a user-provided search query for ILIKE patterns.
+// It escapes wildcard characters (% and _), trims whitespace, and limits length
+// to prevent DoS via expensive pattern matching, character probing, and full table scans.
+func SanitizeSearchQuery(query string) string {
+	query = strings.TrimSpace(query)
+	if len(query) > 100 {
+		query = query[:100]
+	}
+	query = strings.ReplaceAll(query, "%", "\\%")
+	query = strings.ReplaceAll(query, "_", "\\_")
+	return query
+}
+
 // TruncateString truncates a string to a maximum length
 func TruncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {

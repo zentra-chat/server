@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 	"github.com/zentra/server/internal/models"
 	"github.com/zentra/server/internal/services/messaging"
@@ -743,6 +742,7 @@ func (s *Service) DiscoverCommunities(ctx context.Context, query string, limit, 
 	args := []interface{}{}
 
 	if query != "" {
+		query = utils.SanitizeSearchQuery(query)
 		baseQuery += ` AND (name ILIKE $1 OR description ILIKE $1)`
 		args = append(args, "%"+query+"%")
 	}

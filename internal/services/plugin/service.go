@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 	"github.com/zentra/server/internal/models"
-	"github.com/zentra/server/internal/services/channeltype"
+	"github.com/zentra/server/internal/utils"
 )
 
 var (
@@ -122,6 +122,8 @@ func (s *Service) ListAvailablePlugins(ctx context.Context, source string) ([]*m
 
 // SearchPlugins searches available plugins by name or description
 func (s *Service) SearchPlugins(ctx context.Context, query string) ([]*models.Plugin, error) {
+	query = utils.SanitizeSearchQuery(query)
+
 	rows, err := s.db.Query(ctx,
 		`SELECT id, slug, name, description, author, version, homepage_url, source_url, icon_url,
 		        requested_permissions, manifest, built_in, source, is_verified, created_at, updated_at

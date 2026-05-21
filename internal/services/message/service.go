@@ -16,6 +16,7 @@ import (
 	"github.com/zentra/server/internal/models"
 	"github.com/zentra/server/internal/services/messaging"
 	"github.com/zentra/server/internal/services/notification"
+	"github.com/zentra/server/internal/utils"
 )
 
 var (
@@ -735,6 +736,11 @@ func (s *Service) GetPinnedMessages(ctx context.Context, channelID, userID uuid.
 
 // SearchMessages searches messages in a channel
 func (s *Service) SearchMessages(ctx context.Context, channelID, userID uuid.UUID, searchQuery string, limit int) ([]*MessageResponse, error) {
+	searchQuery = utils.SanitizeSearchQuery(searchQuery)
+	if searchQuery == "" {
+		return nil, ErrMessageNotFound
+	}
+
 	if !s.channelService.CanAccessChannel(ctx, channelID, userID) {
 		return nil, ErrInsufficientPerms
 	}

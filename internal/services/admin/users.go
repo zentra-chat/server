@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog/log"
+	"github.com/zentra/server/internal/utils"
 )
 
 func (s *Service) ListUsers(ctx context.Context, page, pageSize int, query, status string) ([]AdminUserListItem, int64, error) {
@@ -21,6 +22,7 @@ func (s *Service) ListUsers(ctx context.Context, page, pageSize int, query, stat
 	where := `WHERE deleted_at IS NULL`
 
 	if query != "" {
+		query = utils.SanitizeSearchQuery(query)
 		searchPattern := "%" + query + "%"
 		where += fmt.Sprintf(` AND ($%d = '' OR username ILIKE $%d OR COALESCE(display_name, '') ILIKE $%d OR email ILIKE $%d)`, argIdx, argIdx, argIdx, argIdx)
 		args = append(args, searchPattern)
