@@ -41,33 +41,13 @@ const (
 	ThumbnailMaxHeight = 300
 )
 
-// Allowed MIME types
-var (
-	AllowedImageTypes = map[string]bool{
-		"image/jpeg": true,
-		"image/png":  true,
-		"image/gif":  true,
-		"image/webp": true,
-	}
-	AllowedVideoTypes = map[string]bool{
-		"video/mp4":       true,
-		"video/webm":      true,
-		"video/quicktime": true,
-	}
-	AllowedAudioTypes = map[string]bool{
-		"audio/mpeg": true,
-		"audio/ogg":  true,
-		"audio/wav":  true,
-		"audio/webm": true,
-	}
-	AllowedDocumentTypes = map[string]bool{
-		"application/pdf":             true,
-		"text/plain":                  true,
-		"application/zip":             true,
-		"application/x-rar":           true,
-		"application/x-7z-compressed": true,
-	}
-)
+// Used to decide whether to generate thumbnails for image uploads
+var AllowedImageTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/gif":  true,
+	"image/webp": true,
+}
 
 type Service struct {
 	db                *pgxpool.Pool
@@ -107,14 +87,9 @@ func (s *Service) UploadAttachment(ctx context.Context, userID, channelID uuid.U
 		contentType = "application/octet-stream"
 	}
 
-	// Validate file type and size
-	maxSize := s.getMaxSizeForType(contentType)
-	if header.Size > maxSize {
+	// Validate file size
+	if header.Size > MaxFileSize {
 		return nil, ErrFileTooLarge
-	}
-
-	if !s.isAllowedType(contentType) {
-		return nil, ErrInvalidFileType
 	}
 
 	// Get community ID from channel
@@ -200,14 +175,9 @@ func (s *Service) UploadDmAttachment(ctx context.Context, userID, conversationID
 		contentType = "application/octet-stream"
 	}
 
-	// Validate file type and size
-	maxSize := s.getMaxSizeForType(contentType)
-	if header.Size > maxSize {
+	// Validate file size
+	if header.Size > MaxFileSize {
 		return nil, ErrFileTooLarge
-	}
-
-	if !s.isAllowedType(contentType) {
-		return nil, ErrInvalidFileType
 	}
 
 	if !s.canAccessDmConversation(ctx, conversationID, userID) {
@@ -490,15 +460,6 @@ func (s *Service) GetPresignedURL(ctx context.Context, attachmentID uuid.UUID, e
 	}
 
 	return presignedURL.String(), nil
-}
-
-// Helper functions
-func (s *Service) getMaxSizeForType(_ string) int64 {
-	return MaxFileSize
-}
-
-func (s *Service) isAllowedType(contentType string) bool {
-	return true
 }
 
 func (s *Service) canAccessDmConversation(ctx context.Context, conversationID, userID uuid.UUID) bool {
