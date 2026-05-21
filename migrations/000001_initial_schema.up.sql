@@ -244,7 +244,7 @@ CREATE TABLE IF NOT EXISTS dm_participants (
 
 CREATE INDEX IF NOT EXISTS idx_dm_participants_user_id ON dm_participants(user_id);
 
--- Direct messages (E2E encrypted)
+-- Direct messages (encrypted at rest)
 CREATE TABLE IF NOT EXISTS direct_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     conversation_id UUID NOT NULL REFERENCES dm_conversations(id) ON DELETE CASCADE,
