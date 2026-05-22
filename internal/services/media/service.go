@@ -398,13 +398,13 @@ func (s *Service) trimURLToObjectName(fileURL, bucket string) string {
 func (s *Service) GetAttachment(ctx context.Context, attachmentID uuid.UUID) (*models.MessageAttachment, error) {
 	var a models.MessageAttachment
 	query := `
-		SELECT id, message_id, message_created_at, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
+		SELECT id, message_id, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
 		FROM message_attachments
 		WHERE id = $1`
 
 	err := s.db.QueryRow(ctx, query, attachmentID).Scan(
-		&a.ID, &a.MessageID, &a.MessageCreatedAt, &a.UploaderID, &a.Filename, &a.FileURL, &a.FileSize,
-		&a.ContentType, &a.ThumbnailURL, &a.Width, &a.Height, &a.CreatedAt,
+		&a.ID, &a.MessageID, &a.UploaderID, &a.Filename, &a.FileURL,
+		&a.FileSize, &a.ContentType, &a.ThumbnailURL, &a.Width, &a.Height, &a.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

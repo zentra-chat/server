@@ -53,7 +53,6 @@ type ParsedMention struct {
 type MentionContext struct {
 	ChannelID          uuid.UUID
 	MessageID          uuid.UUID
-	MessageCreatedAt   time.Time
 	AuthorID           uuid.UUID
 	Content            string
 	ReplyToAuthorID    *uuid.UUID // if non-nil, a reply notification is also dispatched
@@ -237,7 +236,7 @@ func (s *Service) DeleteNotification(ctx context.Context, notifID, userID uuid.U
 // GetMessageMentions returns all stored mentions for a given message.
 func (s *Service) GetMessageMentions(ctx context.Context, messageID uuid.UUID) ([]*models.MessageMention, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id, message_id, message_created_at, channel_id, community_id,
+		SELECT id, message_id, channel_id, community_id,
 		       author_id, mentioned_user_id, mentioned_role_id, mention_type, created_at
 		FROM message_mentions
 		WHERE message_id = $1
@@ -253,7 +252,7 @@ func (s *Service) GetMessageMentions(ctx context.Context, messageID uuid.UUID) (
 	for rows.Next() {
 		m := &models.MessageMention{}
 		if err := rows.Scan(
-			&m.ID, &m.MessageID, &m.MessageCreatedAt, &m.ChannelID, &m.CommunityID,
+			&m.ID, &m.MessageID, &m.ChannelID, &m.CommunityID,
 			&m.AuthorID, &m.MentionedUserID, &m.MentionedRoleID, &m.MentionType, &m.CreatedAt,
 		); err == nil {
 			mentions = append(mentions, m)
@@ -299,13 +298,12 @@ func (s *Service) ProcessMessageMentions(mctx MentionContext) {
 			notified[*mention.UserID] = true
 
 			s.storeMention(ctx, models.MessageMention{
-				MessageID:        mctx.MessageID,
-				MessageCreatedAt: mctx.MessageCreatedAt,
-				ChannelID:        mctx.ChannelID,
-				CommunityID:      communityID,
-				AuthorID:         mctx.AuthorID,
-				MentionedUserID:  mention.UserID,
-				MentionType:      models.MentionTypeUser,
+				MessageID:       mctx.MessageID,
+				ChannelID:       mctx.ChannelID,
+				CommunityID:     communityID,
+				AuthorID:        mctx.AuthorID,
+				MentionedUserID: mention.UserID,
+				MentionType:     models.MentionTypeUser,
 			})
 			s.createAndSend(ctx, models.Notification{
 				UserID:      *mention.UserID,
@@ -330,13 +328,12 @@ func (s *Service) ProcessMessageMentions(mctx MentionContext) {
 			}
 
 			s.storeMention(ctx, models.MessageMention{
-				MessageID:        mctx.MessageID,
-				MessageCreatedAt: mctx.MessageCreatedAt,
-				ChannelID:        mctx.ChannelID,
-				CommunityID:      communityID,
-				AuthorID:         mctx.AuthorID,
-				MentionedRoleID:  mention.RoleID,
-				MentionType:      models.MentionTypeRole,
+				MessageID:       mctx.MessageID,
+				ChannelID:       mctx.ChannelID,
+				CommunityID:     communityID,
+				AuthorID:        mctx.AuthorID,
+				MentionedRoleID: mention.RoleID,
+				MentionType:     models.MentionTypeRole,
 			})
 			for _, uid := range members {
 				if notified[uid] {
@@ -366,12 +363,11 @@ func (s *Service) ProcessMessageMentions(mctx MentionContext) {
 				continue
 			}
 			s.storeMention(ctx, models.MessageMention{
-				MessageID:        mctx.MessageID,
-				MessageCreatedAt: mctx.MessageCreatedAt,
-				ChannelID:        mctx.ChannelID,
-				CommunityID:      communityID,
-				AuthorID:         mctx.AuthorID,
-				MentionType:      models.MentionTypeEveryone,
+				MessageID:   mctx.MessageID,
+				ChannelID:   mctx.ChannelID,
+				CommunityID: communityID,
+				AuthorID:    mctx.AuthorID,
+				MentionType: models.MentionTypeEveryone,
 			})
 			for _, uid := range members {
 				if notified[uid] {
@@ -400,12 +396,11 @@ func (s *Service) ProcessMessageMentions(mctx MentionContext) {
 				continue
 			}
 			s.storeMention(ctx, models.MessageMention{
-				MessageID:        mctx.MessageID,
-				MessageCreatedAt: mctx.MessageCreatedAt,
-				ChannelID:        mctx.ChannelID,
-				CommunityID:      communityID,
-				AuthorID:         mctx.AuthorID,
-				MentionType:      models.MentionTypeHere,
+				MessageID:   mctx.MessageID,
+				ChannelID:   mctx.ChannelID,
+				CommunityID: communityID,
+				AuthorID:    mctx.AuthorID,
+				MentionType: models.MentionTypeHere,
 			})
 			for _, uid := range members {
 				if notified[uid] || !s.hub.IsUserOnline(uid) {
@@ -488,11 +483,11 @@ func (s *Service) storeMention(ctx context.Context, m models.MessageMention) {
 	m.CreatedAt = time.Now()
 	if _, err := s.db.Exec(ctx, `
 		INSERT INTO message_mentions
-			(id, message_id, message_created_at, channel_id, community_id,
+			(id, message_id, channel_id, community_id,
 			 author_id, mentioned_user_id, mentioned_role_id, mention_type, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		ON CONFLICT DO NOTHING`,
-		m.ID, m.MessageID, m.MessageCreatedAt, m.ChannelID, m.CommunityID,
+		m.ID, m.MessageID, m.ChannelID, m.CommunityID,
 		m.AuthorID, m.MentionedUserID, m.MentionedRoleID, m.MentionType, m.CreatedAt,
 	); err != nil {
 		log.Error().Err(err).Msg("Failed to store message mention")

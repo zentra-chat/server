@@ -184,8 +184,8 @@ func (s *Service) CreateMessage(ctx context.Context, channelID, userID uuid.UUID
 	if len(req.Attachments) > 0 {
 		for _, attachmentID := range req.Attachments {
 			_, err = tx.Exec(ctx,
-				`UPDATE message_attachments SET message_id = $1, message_created_at = $2 WHERE id = $3`,
-				messageID, now, attachmentID,
+				`UPDATE message_attachments SET message_id = $1 WHERE id = $2`,
+				messageID, attachmentID,
 			)
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to link attachment")
@@ -229,7 +229,6 @@ func (s *Service) CreateMessage(ctx context.Context, channelID, userID uuid.UUID
 		mctx := notification.MentionContext{
 			ChannelID:          channelID,
 			MessageID:          messageID,
-			MessageCreatedAt:   now,
 			AuthorID:           userID,
 			Content:            req.Content,
 			ReplyToAuthorID:    replyToAuthorID,
@@ -604,13 +603,11 @@ func (s *Service) AddReaction(ctx context.Context, messageID, userID uuid.UUID, 
 
 // RemoveReaction removes a reaction from a message
 func (s *Service) RemoveReaction(ctx context.Context, messageID, userID uuid.UUID, emoji string) error {
-	// Need createdAt for partitioned table update
 	var channelID uuid.UUID
-	var createdAtTime time.Time
 	err := s.db.QueryRow(ctx,
-		`SELECT created_at, channel_id FROM messages WHERE id = $1 AND deleted_at IS NULL`,
+		`SELECT channel_id FROM messages WHERE id = $1 AND deleted_at IS NULL`,
 		messageID,
-	).Scan(&createdAtTime, &channelID)
+	).Scan(&channelID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrMessageNotFound
@@ -618,17 +615,16 @@ func (s *Service) RemoveReaction(ctx context.Context, messageID, userID uuid.UUI
 		return err
 	}
 
-	query := `
-		UPDATE messages
-		SET reactions = jsonb_set(
+	_, err = s.db.Exec(ctx,
+		`UPDATE messages SET reactions = jsonb_set(
 			reactions,
 			ARRAY[$1::text],
 			(reactions->$1) - $2::text
 		),
 		updated_at = $3
-		WHERE id = $4 AND created_at = $5`
-
-	_, err = s.db.Exec(ctx, query, emoji, userID.String(), time.Now(), messageID, createdAtTime)
+		WHERE id = $4 AND channel_id = $5`,
+		emoji, userID.String(), time.Now(), messageID, channelID,
+	)
 	if err != nil {
 		return err
 	}
@@ -824,7 +820,7 @@ func (s *Service) SearchMessages(ctx context.Context, channelID, userID uuid.UUI
 // Helper functions
 func (s *Service) getMessageAttachments(ctx context.Context, messageID uuid.UUID) ([]models.MessageAttachment, error) {
 	query := `
-		SELECT id, message_id, message_created_at, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
+		SELECT id, message_id, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
 		FROM message_attachments
 		WHERE message_id = $1`
 
@@ -837,7 +833,7 @@ func (s *Service) getMessageAttachments(ctx context.Context, messageID uuid.UUID
 	var attachments []models.MessageAttachment
 	for rows.Next() {
 		var a models.MessageAttachment
-		err := rows.Scan(&a.ID, &a.MessageID, &a.MessageCreatedAt, &a.UploaderID, &a.Filename, &a.FileURL,
+		err := rows.Scan(&a.ID, &a.MessageID, &a.UploaderID, &a.Filename, &a.FileURL,
 			&a.FileSize, &a.ContentType, &a.ThumbnailURL, &a.Width, &a.Height, &a.CreatedAt)
 		if err != nil {
 			return nil, err
@@ -899,7 +895,7 @@ func (s *Service) batchGetAttachments(ctx context.Context, messageIDs []uuid.UUI
 	result := make(map[uuid.UUID][]models.MessageAttachment)
 
 	query := `
-		SELECT id, message_id, message_created_at, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
+		SELECT id, message_id, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
 		FROM message_attachments
 		WHERE message_id = ANY($1)`
 
@@ -911,7 +907,7 @@ func (s *Service) batchGetAttachments(ctx context.Context, messageIDs []uuid.UUI
 
 	for rows.Next() {
 		var a models.MessageAttachment
-		err := rows.Scan(&a.ID, &a.MessageID, &a.MessageCreatedAt, &a.UploaderID, &a.Filename, &a.FileURL,
+		err := rows.Scan(&a.ID, &a.MessageID, &a.UploaderID, &a.Filename, &a.FileURL,
 			&a.FileSize, &a.ContentType, &a.ThumbnailURL, &a.Width, &a.Height, &a.CreatedAt)
 		if err != nil {
 			continue

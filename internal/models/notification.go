@@ -52,14 +52,13 @@ type Notification struct {
 
 // MessageMention represents a mention record stored for a message.
 type MessageMention struct {
-	ID               uuid.UUID   `json:"id" db:"id"`
-	MessageID        uuid.UUID   `json:"messageId" db:"message_id"`
-	MessageCreatedAt time.Time   `json:"-" db:"message_created_at"`
-	ChannelID        uuid.UUID   `json:"channelId" db:"channel_id"`
-	CommunityID      *uuid.UUID  `json:"communityId,omitempty" db:"community_id"`
-	AuthorID         uuid.UUID   `json:"authorId" db:"author_id"`
-	MentionedUserID  *uuid.UUID  `json:"mentionedUserId,omitempty" db:"mentioned_user_id"`
-	MentionedRoleID  *uuid.UUID  `json:"mentionedRoleId,omitempty" db:"mentioned_role_id"`
-	MentionType      MentionType `json:"mentionType" db:"mention_type"`
-	CreatedAt        time.Time   `json:"createdAt" db:"created_at"`
+	ID              uuid.UUID   `json:"id" db:"id"`
+	MessageID       uuid.UUID   `json:"messageId" db:"message_id"`
+	ChannelID       uuid.UUID   `json:"channelId" db:"channel_id"`
+	CommunityID     *uuid.UUID  `json:"communityId,omitempty" db:"community_id"`
+	AuthorID        uuid.UUID   `json:"authorId" db:"author_id"`
+	MentionedUserID *uuid.UUID  `json:"mentionedUserId,omitempty" db:"mentioned_user_id"`
+	MentionedRoleID *uuid.UUID  `json:"mentionedRoleId,omitempty" db:"mentioned_role_id"`
+	MentionType     MentionType `json:"mentionType" db:"mention_type"`
+	CreatedAt       time.Time   `json:"createdAt" db:"created_at"`
 }

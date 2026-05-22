@@ -31,27 +31,25 @@ type MessageWithAuthor struct {
 }
 
 type MessageAttachment struct {
-	ID               uuid.UUID  `json:"id" db:"id"`
-	MessageID        *uuid.UUID `json:"messageId" db:"message_id"`
-	MessageCreatedAt *time.Time `json:"-" db:"message_created_at"`
-	UploaderID       uuid.UUID  `json:"uploaderId" db:"uploader_id"`
-	Filename         string     `json:"filename" db:"filename"`
-	FileURL          string     `json:"url" db:"file_url"`
-	FileSize         int64      `json:"size" db:"file_size"`
-	ContentType      *string    `json:"contentType,omitempty" db:"content_type"`
-	ThumbnailURL     *string    `json:"thumbnailUrl,omitempty" db:"thumbnail_url"`
-	Width            *int       `json:"width,omitempty" db:"width"`
-	Height           *int       `json:"height,omitempty" db:"height"`
-	CreatedAt        time.Time  `json:"createdAt" db:"created_at"`
+	ID           uuid.UUID  `json:"id" db:"id"`
+	MessageID    *uuid.UUID `json:"messageId" db:"message_id"`
+	UploaderID   uuid.UUID  `json:"uploaderId" db:"uploader_id"`
+	Filename     string     `json:"filename" db:"filename"`
+	FileURL      string     `json:"url" db:"file_url"`
+	FileSize     int64      `json:"size" db:"file_size"`
+	ContentType  *string    `json:"contentType,omitempty" db:"content_type"`
+	ThumbnailURL *string    `json:"thumbnailUrl,omitempty" db:"thumbnail_url"`
+	Width        *int       `json:"width,omitempty" db:"width"`
+	Height       *int       `json:"height,omitempty" db:"height"`
+	CreatedAt    time.Time  `json:"createdAt" db:"created_at"`
 }
 
 type MessageReaction struct {
-	ID               uuid.UUID `json:"id" db:"id"`
-	MessageID        uuid.UUID `json:"messageId" db:"message_id"`
-	MessageCreatedAt time.Time `json:"-" db:"message_created_at"`
-	UserID           uuid.UUID `json:"userId" db:"user_id"`
-	Emoji            string    `json:"emoji" db:"emoji"`
-	CreatedAt        time.Time `json:"createdAt" db:"created_at"`
+	ID        uuid.UUID `json:"id" db:"id"`
+	MessageID uuid.UUID `json:"messageId" db:"message_id"`
+	UserID    uuid.UUID `json:"userId" db:"user_id"`
+	Emoji     string    `json:"emoji" db:"emoji"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 }
 
 type ReactionCount struct {

@@ -370,7 +370,6 @@ func (s *Service) ImportDiscordServer(ctx context.Context, req *DiscordImportReq
 		}
 
 		createdMessageBySource := make(map[string]uuid.UUID)
-		createdMessageTimeByID := make(map[uuid.UUID]time.Time)
 		lastMessageAtByChannel := make(map[uuid.UUID]time.Time)
 		authorUserIDByKey := make(map[string]uuid.UUID)
 		memberIDByUserID := map[uuid.UUID]uuid.UUID{req.OwnerID: memberID}
@@ -406,14 +405,6 @@ func (s *Service) ImportDiscordServer(ctx context.Context, req *DiscordImportReq
 				createdAt := now.Add(time.Duration(response.ImportedCounts.Messages+messageIndex) * time.Millisecond)
 				if importedMessage.CreatedAt != nil && !importedMessage.CreatedAt.IsZero() {
 					createdAt = importedMessage.CreatedAt.UTC()
-				}
-
-				if err := ensureMessagePartition(ctx, tx, createdAt); err != nil {
-					fallback := now.Add(time.Duration(response.ImportedCounts.Messages+messageIndex) * time.Millisecond)
-					if partitionErr := ensureMessagePartition(ctx, tx, fallback); partitionErr != nil {
-						return fmt.Errorf("failed to prepare message partition: %w", err)
-					}
-					createdAt = fallback
 				}
 
 				authorID := req.OwnerID
@@ -486,7 +477,6 @@ func (s *Service) ImportDiscordServer(ctx context.Context, req *DiscordImportReq
 				if importedMessage.SourceID != "" {
 					createdMessageBySource[importedMessage.SourceID] = messageID
 				}
-				createdMessageTimeByID[messageID] = createdAt
 				lastMessageAtByChannel[channelID] = createdAt
 				response.ImportedCounts.Messages++
 
@@ -494,11 +484,11 @@ func (s *Service) ImportDiscordServer(ctx context.Context, req *DiscordImportReq
 					attachmentID := uuid.New()
 					_, err = tx.Exec(ctx,
 						`INSERT INTO message_attachments (
-							id, message_id, message_created_at, uploader_id, filename, file_url,
+							id, message_id, uploader_id, filename, file_url,
 							file_size, content_type, thumbnail_url, width, height, created_at
 						)
-						VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-						attachmentID, messageID, createdMessageTimeByID[messageID], authorID, attachment.Filename,
+						VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+						attachmentID, messageID, authorID, attachment.Filename,
 						attachment.URL, attachment.Size, attachment.ContentType, attachment.ThumbnailURL,
 						attachment.Width, attachment.Height, createdAt,
 					)
@@ -643,25 +633,6 @@ func ensureImportedAuthorUser(ctx context.Context, tx pgx.Tx, communityID uuid.U
 	}
 
 	return ensuredUserID, nil
-}
-
-func ensureMessagePartition(ctx context.Context, tx pgx.Tx, createdAt time.Time) error {
-	createdAt = createdAt.UTC()
-	start := time.Date(createdAt.Year(), createdAt.Month(), 1, 0, 0, 0, 0, time.UTC)
-	end := start.AddDate(0, 1, 0)
-	partitionName := fmt.Sprintf("messages_%04d_%02d", start.Year(), int(start.Month()))
-
-	// DDL statements like CREATE TABLE PARTITION OF don't support parameters ($1, $2).
-	// We use the already-formatted/safe partition name and format the range values as literal strings.
-	query := fmt.Sprintf(
-		"CREATE TABLE IF NOT EXISTS %s PARTITION OF messages FOR VALUES FROM ('%s') TO ('%s')",
-		partitionName,
-		start.Format("2006-01-02 15:04:05Z07:00"),
-		end.Format("2006-01-02 15:04:05Z07:00"),
-	)
-
-	_, err := tx.Exec(ctx, query)
-	return err
 }
 
 func normalizeImportedChannelType(importedType string) models.ChannelType {

@@ -154,9 +154,9 @@ CREATE TABLE IF NOT EXISTS channel_permissions (
 
 CREATE INDEX IF NOT EXISTS idx_channel_permissions_channel_id ON channel_permissions(channel_id);
 
--- Messages (partitioned by month for scalability)
+-- Messages
 CREATE TABLE IF NOT EXISTS messages (
-    id UUID DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     channel_id UUID NOT NULL,
     author_id UUID NOT NULL,
     content TEXT,
@@ -168,48 +168,17 @@ CREATE TABLE IF NOT EXISTS messages (
     link_previews JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ,
-    PRIMARY KEY (id, created_at)
-) PARTITION BY RANGE (created_at);
+    deleted_at TIMESTAMPTZ
+);
 
 CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_author_id ON messages(author_id);
 CREATE INDEX IF NOT EXISTS idx_messages_reply_to_id ON messages(reply_to_id);
 
--- Create initial message partitions (one year ahead)
--- A better solution would be to automate partition creation via a scheduled job
--- but for now, we'll create partitions for the next 18 months
--- I can update it manually if they project ever lasts that long.
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_01') THEN CREATE TABLE messages_2025_01 PARTITION OF messages FOR VALUES FROM ('2025-01-01') TO ('2025-02-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_02') THEN CREATE TABLE messages_2025_02 PARTITION OF messages FOR VALUES FROM ('2025-02-01') TO ('2025-03-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_03') THEN CREATE TABLE messages_2025_03 PARTITION OF messages FOR VALUES FROM ('2025-03-01') TO ('2025-04-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_04') THEN CREATE TABLE messages_2025_04 PARTITION OF messages FOR VALUES FROM ('2025-04-01') TO ('2025-05-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_05') THEN CREATE TABLE messages_2025_05 PARTITION OF messages FOR VALUES FROM ('2025-05-01') TO ('2025-06-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_06') THEN CREATE TABLE messages_2025_06 PARTITION OF messages FOR VALUES FROM ('2025-06-01') TO ('2025-07-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_07') THEN CREATE TABLE messages_2025_07 PARTITION OF messages FOR VALUES FROM ('2025-07-01') TO ('2025-08-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_08') THEN CREATE TABLE messages_2025_08 PARTITION OF messages FOR VALUES FROM ('2025-08-01') TO ('2025-09-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_09') THEN CREATE TABLE messages_2025_09 PARTITION OF messages FOR VALUES FROM ('2025-09-01') TO ('2025-10-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_10') THEN CREATE TABLE messages_2025_10 PARTITION OF messages FOR VALUES FROM ('2025-10-01') TO ('2025-11-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_11') THEN CREATE TABLE messages_2025_11 PARTITION OF messages FOR VALUES FROM ('2025-11-01') TO ('2025-12-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2025_12') THEN CREATE TABLE messages_2025_12 PARTITION OF messages FOR VALUES FROM ('2025-12-01') TO ('2026-01-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_01') THEN CREATE TABLE messages_2026_01 PARTITION OF messages FOR VALUES FROM ('2026-01-01') TO ('2026-02-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_02') THEN CREATE TABLE messages_2026_02 PARTITION OF messages FOR VALUES FROM ('2026-02-01') TO ('2026-03-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_03') THEN CREATE TABLE messages_2026_03 PARTITION OF messages FOR VALUES FROM ('2026-03-01') TO ('2026-04-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_04') THEN CREATE TABLE messages_2026_04 PARTITION OF messages FOR VALUES FROM ('2026-04-01') TO ('2026-05-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_05') THEN CREATE TABLE messages_2026_05 PARTITION OF messages FOR VALUES FROM ('2026-05-01') TO ('2026-06-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_06') THEN CREATE TABLE messages_2026_06 PARTITION OF messages FOR VALUES FROM ('2026-06-01') TO ('2026-07-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_07') THEN CREATE TABLE messages_2026_07 PARTITION OF messages FOR VALUES FROM ('2026-07-01') TO ('2026-08-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_08') THEN CREATE TABLE messages_2026_08 PARTITION OF messages FOR VALUES FROM ('2026-08-01') TO ('2026-09-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_09') THEN CREATE TABLE messages_2026_09 PARTITION OF messages FOR VALUES FROM ('2026-09-01') TO ('2026-10-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_10') THEN CREATE TABLE messages_2026_10 PARTITION OF messages FOR VALUES FROM ('2026-10-01') TO ('2026-11-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_11') THEN CREATE TABLE messages_2026_11 PARTITION OF messages FOR VALUES FROM ('2026-11-01') TO ('2026-12-01'); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'messages_2026_12') THEN CREATE TABLE messages_2026_12 PARTITION OF messages FOR VALUES FROM ('2026-12-01') TO ('2027-01-01'); END IF; END $$;
-
 -- Message attachments
 CREATE TABLE IF NOT EXISTS message_attachments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     message_id UUID,
-    message_created_at TIMESTAMPTZ,
     dm_message_id UUID,
     dm_conversation_id UUID,
     uploader_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

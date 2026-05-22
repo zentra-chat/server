@@ -949,7 +949,7 @@ func (s *Service) getReplyPreview(ctx context.Context, messageID uuid.UUID) (*DM
 
 func (s *Service) getDmMessageAttachments(ctx context.Context, messageID uuid.UUID) ([]models.MessageAttachment, error) {
 	query := `
-		SELECT id, dm_message_id, message_created_at, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
+		SELECT id, dm_message_id, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
 		FROM message_attachments
 		WHERE dm_message_id = $1`
 
@@ -962,10 +962,14 @@ func (s *Service) getDmMessageAttachments(ctx context.Context, messageID uuid.UU
 	var attachments []models.MessageAttachment
 	for rows.Next() {
 		var a models.MessageAttachment
-		err := rows.Scan(&a.ID, &a.MessageID, &a.MessageCreatedAt, &a.UploaderID, &a.Filename, &a.FileURL,
+		var dmMessageID *uuid.UUID
+		err := rows.Scan(&a.ID, &dmMessageID, &a.UploaderID, &a.Filename, &a.FileURL,
 			&a.FileSize, &a.ContentType, &a.ThumbnailURL, &a.Width, &a.Height, &a.CreatedAt)
 		if err != nil {
 			return nil, err
+		}
+		if dmMessageID != nil {
+			a.MessageID = dmMessageID
 		}
 		attachments = append(attachments, a)
 	}
@@ -982,7 +986,7 @@ func (s *Service) batchGetDmAttachments(ctx context.Context, messageIDs []uuid.U
 	result := make(map[uuid.UUID][]models.MessageAttachment)
 
 	query := `
-		SELECT id, dm_message_id, message_created_at, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
+		SELECT id, dm_message_id, uploader_id, filename, file_url, file_size, content_type, thumbnail_url, width, height, created_at
 		FROM message_attachments
 		WHERE dm_message_id = ANY($1)`
 
@@ -995,12 +999,13 @@ func (s *Service) batchGetDmAttachments(ctx context.Context, messageIDs []uuid.U
 	for rows.Next() {
 		var a models.MessageAttachment
 		var dmMessageID *uuid.UUID
-		err := rows.Scan(&a.ID, &dmMessageID, &a.MessageCreatedAt, &a.UploaderID, &a.Filename, &a.FileURL,
+		err := rows.Scan(&a.ID, &dmMessageID, &a.UploaderID, &a.Filename, &a.FileURL,
 			&a.FileSize, &a.ContentType, &a.ThumbnailURL, &a.Width, &a.Height, &a.CreatedAt)
 		if err != nil {
 			continue
 		}
 		if dmMessageID != nil {
+			a.MessageID = dmMessageID
 			result[*dmMessageID] = append(result[*dmMessageID], a)
 		}
 	}
