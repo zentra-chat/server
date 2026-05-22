@@ -1932,6 +1932,42 @@ func (s *Service) GetMemberPermissions(ctx context.Context, communityID, userID 
 	return userPermissions, nil
 }
 
+func (s *Service) GetMemberPermissionsForMember(ctx context.Context, communityID uuid.UUID, member *models.CommunityMember) (int64, error) {
+	community, err := s.GetCommunity(ctx, communityID)
+	if err != nil {
+		return 0, err
+	}
+
+	if community.OwnerID == member.UserID {
+		return models.PermissionAdministrator, nil
+	}
+
+	var userPermissions int64
+	var roleCount int
+	err = s.db.QueryRow(ctx,
+		`SELECT COALESCE(BIT_OR(r.permissions), 0), COUNT(r.id)
+		FROM member_roles mr
+		JOIN roles r ON r.id = mr.role_id
+		WHERE mr.member_id = $1`,
+		member.ID,
+	).Scan(&userPermissions, &roleCount)
+	if err != nil {
+		return 0, err
+	}
+
+	if roleCount == 0 {
+		err = s.db.QueryRow(ctx,
+			`SELECT permissions FROM roles WHERE community_id = $1 AND is_default = TRUE`,
+			communityID,
+		).Scan(&userPermissions)
+		if err != nil {
+			return 0, ErrInsufficientPerms
+		}
+	}
+
+	return userPermissions, nil
+}
+
 func (s *Service) IsMember(ctx context.Context, communityID, userID uuid.UUID) bool {
 	_, err := s.GetMember(ctx, communityID, userID)
 	return err == nil

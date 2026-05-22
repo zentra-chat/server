@@ -153,19 +153,11 @@ func (h *Handler) GetCommunityChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	channels, err := h.service.GetCommunityChannels(r.Context(), communityID)
+	channels, err := h.service.GetCommunityChannels(r.Context(), communityID, userID)
 	if err != nil {
 		utils.RespondError(w, http.StatusInternalServerError, "Failed to get channels")
 		return
 	}
-
-	accessible := channels[:0]
-	for _, channel := range channels {
-		if h.service.CanAccessChannel(r.Context(), channel.ID, userID) {
-			accessible = append(accessible, channel)
-		}
-	}
-	channels = accessible
 
 	utils.RespondSuccess(w, channels)
 }

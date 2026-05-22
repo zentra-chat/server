@@ -129,7 +129,7 @@ func (s *Service) GetChannel(ctx context.Context, id uuid.UUID) (*models.Channel
 	return channel, nil
 }
 
-func (s *Service) GetCommunityChannels(ctx context.Context, communityID uuid.UUID) ([]*models.ChannelWithCategory, error) {
+func (s *Service) GetCommunityChannels(ctx context.Context, communityID, userID uuid.UUID) ([]*models.ChannelWithCategory, error) {
 	rows, err := s.db.Query(ctx,
 		`SELECT c.id, c.community_id, c.category_id, c.name, c.topic, c.type, c.position, 
 		c.is_nsfw, c.slowmode_seconds, c.metadata, c.created_at, c.updated_at, cat.name as category_name
@@ -162,7 +162,102 @@ func (s *Service) GetCommunityChannels(ctx context.Context, communityID uuid.UUI
 		return nil, err
 	}
 
-	return channels, nil
+	if len(channels) == 0 {
+		return channels, nil
+	}
+
+	// Batch permission resolution for all channels
+	basePermissions, err := s.communityService.GetMemberPermissions(ctx, communityID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if basePermissions&models.PermissionAdministrator != 0 {
+		return channels, nil
+	}
+
+	member, err := s.communityService.GetMember(ctx, communityID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	roleIDs, err := s.communityService.GetMemberRoleIDs(ctx, communityID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if roleIDs == nil {
+		roleIDs = []uuid.UUID{}
+	}
+
+	defaultRole, err := s.communityService.GetDefaultRole(ctx, communityID)
+	if err == nil && defaultRole != nil {
+		roleIDs = append(roleIDs, defaultRole.ID)
+	}
+
+	permRows, err := s.db.Query(ctx,
+		`SELECT cp.channel_id, cp.target_type, cp.allow_permissions, cp.deny_permissions
+		FROM channel_permissions cp
+		WHERE cp.channel_id = ANY(SELECT id FROM channels WHERE community_id = $1)
+		AND (
+			(cp.target_type = 'role' AND cp.target_id = ANY($2))
+			OR (cp.target_type = 'member' AND cp.target_id = $3)
+		)`,
+		communityID, roleIDs, member.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer permRows.Close()
+
+	type channelOverride struct {
+		roleAllow   int64
+		roleDeny    int64
+		memberAllow int64
+		memberDeny  int64
+	}
+	overrides := make(map[uuid.UUID]*channelOverride)
+	for permRows.Next() {
+		var channelID uuid.UUID
+		var targetType string
+		var allowPerms, denyPerms int64
+		if err := permRows.Scan(&channelID, &targetType, &allowPerms, &denyPerms); err != nil {
+			return nil, err
+		}
+
+		co, ok := overrides[channelID]
+		if !ok {
+			co = &channelOverride{}
+			overrides[channelID] = co
+		}
+
+		if targetType == "member" {
+			co.memberAllow |= allowPerms
+			co.memberDeny |= denyPerms
+		} else {
+			co.roleAllow |= allowPerms
+			co.roleDeny |= denyPerms
+		}
+	}
+	if err := permRows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Failed to iterate channel permission rows")
+		return nil, err
+	}
+
+	accessible := channels[:0]
+	for _, ch := range channels {
+		perms := basePermissions
+		if co, ok := overrides[ch.ID]; ok {
+			perms &= ^co.roleDeny
+			perms |= co.roleAllow
+			perms &= ^co.memberDeny
+			perms |= co.memberAllow
+		}
+		if models.HasPermission(perms, models.PermissionViewChannels) {
+			accessible = append(accessible, ch)
+		}
+	}
+
+	return accessible, nil
 }
 
 type UpdateChannelRequest struct {
@@ -666,18 +761,18 @@ func (s *Service) getChannelPermissions(ctx context.Context, channelID, userID u
 		return 0, err
 	}
 
-	basePermissions, err := s.communityService.GetMemberPermissions(ctx, channel.CommunityID, userID)
+	member, err := s.communityService.GetMember(ctx, channel.CommunityID, userID)
+	if err != nil {
+		return 0, err
+	}
+
+	basePermissions, err := s.communityService.GetMemberPermissionsForMember(ctx, channel.CommunityID, member)
 	if err != nil {
 		return 0, err
 	}
 
 	if basePermissions&models.PermissionAdministrator != 0 {
 		return basePermissions, nil
-	}
-
-	member, err := s.communityService.GetMember(ctx, channel.CommunityID, userID)
-	if err != nil {
-		return 0, err
 	}
 
 	roleIDs, err := s.communityService.GetMemberRoleIDs(ctx, channel.CommunityID, userID)
