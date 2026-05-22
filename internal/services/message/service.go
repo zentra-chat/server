@@ -428,9 +428,18 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 		return nil, err
 	}
 
-	// Batch fetch attachments
+	// Batch fetch attachments and reply previews
 	if len(messageIDs) > 0 {
 		attachmentMap := s.batchGetAttachments(ctx, messageIDs)
+
+		// Collect reply IDs for batch fetch
+		replyIDs := make([]uuid.UUID, 0, len(messages))
+		for _, m := range messages {
+			if m.ReplyToID != nil {
+				replyIDs = append(replyIDs, *m.ReplyToID)
+			}
+		}
+		replyPreviews := s.batchGetReplyPreviews(ctx, replyIDs)
 
 		for _, m := range messages {
 			if attachments, ok := attachmentMap[m.ID]; ok {
@@ -458,7 +467,7 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 			}
 
 			if m.ReplyToID != nil {
-				m.ReplyTo, _ = s.getReplyPreview(ctx, *m.ReplyToID)
+				m.ReplyTo = replyPreviews[*m.ReplyToID]
 			}
 		}
 	}
@@ -889,6 +898,59 @@ func (s *Service) CanManageMessages(ctx context.Context, channelID, userID uuid.
 
 func (s *Service) CanPinMessages(ctx context.Context, channelID, userID uuid.UUID) bool {
 	return s.channelService.CanPinMessages(ctx, channelID, userID)
+}
+
+func (s *Service) batchGetReplyPreviews(ctx context.Context, messageIDs []uuid.UUID) map[uuid.UUID]*MessageReplyPreview {
+	result := make(map[uuid.UUID]*MessageReplyPreview)
+	if len(messageIDs) == 0 {
+		return result
+	}
+
+	query := `
+		SELECT m.id, m.encrypted_content, m.author_id,
+		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		FROM messages m
+		JOIN users u ON u.id = m.author_id
+		WHERE m.id = ANY($1)`
+
+	rows, err := s.db.Query(ctx, query, messageIDs)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var preview MessageReplyPreview
+		var encContent []byte
+		var author models.PublicUser
+
+		err := rows.Scan(
+			&preview.ID, &encContent, &preview.AuthorID,
+			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
+		)
+		if err != nil {
+			continue
+		}
+
+		contentStr, err := s.cipher.Decrypt(encContent, nil)
+		if err != nil {
+			preview.Content = "[Decryption Error]"
+		} else {
+			if len(contentStr) > 100 {
+				contentStr = contentStr[:100] + "..."
+			}
+			preview.Content = contentStr
+		}
+		preview.Author = &author
+
+		result[preview.ID] = &preview
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("Error iterating over batch reply previews")
+	}
+
+	return result
 }
 
 func (s *Service) batchGetAttachments(ctx context.Context, messageIDs []uuid.UUID) map[uuid.UUID][]models.MessageAttachment {
