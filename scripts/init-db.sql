@@ -12,11 +12,5 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
-DO $$ BEGIN
-    CREATE TYPE channel_type AS ENUM ('text', 'announcement', 'gallery', 'forum', 'voice');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
 -- Grant privileges
 GRANT ALL PRIVILEGES ON DATABASE zentra TO zentra;
