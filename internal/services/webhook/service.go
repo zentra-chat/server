@@ -28,6 +28,7 @@ import (
 	"github.com/zentra/server/internal/services/message"
 	"github.com/zentra/server/internal/services/messaging"
 	"github.com/zentra/server/pkg/auth"
+	"github.com/zentra/server/pkg/encryption"
 )
 
 const (
@@ -58,6 +59,7 @@ type Service struct {
 	cipher         messaging.ContentCipher
 	channelService ChannelServiceInterface
 	avatarUploader AvatarUploader
+	masterKey      []byte
 }
 
 type CreateWebhookRequest struct {
@@ -78,10 +80,25 @@ func NewService(db *pgxpool.Pool, redisClient *redis.Client, encryptionKey []byt
 	return &Service{
 		db:             db,
 		redis:          redisClient,
-		cipher:         messaging.NewChannelCipher(encryptionKey),
+		cipher:         messaging.NewChannelCipher(),
 		channelService: channelService,
 		avatarUploader: avatarUploader,
+		masterKey:      encryptionKey,
 	}
+}
+
+func (s *Service) communityDEK(ctx context.Context, channelID uuid.UUID) ([]byte, error) {
+	var wrapped []byte
+	err := s.db.QueryRow(ctx,
+		`SELECT c.encrypted_dek
+		 FROM communities c
+		 JOIN channels ch ON ch.community_id = c.id
+		 WHERE ch.id = $1`, channelID,
+	).Scan(&wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("load community DEK: %w", err)
+	}
+	return encryption.UnwrapKey(wrapped, s.masterKey)
 }
 
 func (s *Service) CreateWebhook(ctx context.Context, channelID, userID uuid.UUID, req *CreateWebhookRequest) (*models.Webhook, string, error) {
@@ -354,8 +371,13 @@ func (s *Service) ExecuteWebhook(ctx context.Context, webhookID uuid.UUID, token
 		return nil, ErrInvalidWebhookToken
 	}
 
+	webhookKey, err := s.communityDEK(ctx, webhook.ChannelID)
+	if err != nil {
+		return nil, fmt.Errorf("derive webhook channel key: %w", err)
+	}
+
 	content, previews := buildWebhookMessage(webhook, headers, contentType, rawBody)
-	encryptedContent, _, err := s.cipher.Encrypt(content)
+	encryptedContent, _, err := s.cipher.Encrypt(content, webhookKey)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt webhook message: %w", err)
 	}
@@ -513,7 +535,12 @@ func (s *Service) getMessageResponse(ctx context.Context, messageID uuid.UUID) (
 		return nil, err
 	}
 
-	content, err := s.cipher.Decrypt(encContent, nil)
+	msgKey, err := s.communityDEK(ctx, msg.ChannelID)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := s.cipher.Decrypt(encContent, nil, msgKey)
 	if err != nil {
 		fallback := "[Decryption Error]"
 		msg.Content = &fallback

@@ -20,6 +20,7 @@ import (
 	"github.com/zentra/server/internal/utils"
 	"github.com/zentra/server/pkg/auth"
 	"github.com/zentra/server/pkg/database"
+	"github.com/zentra/server/pkg/encryption"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -38,13 +39,28 @@ var (
 )
 
 type Service struct {
-	db     *pgxpool.Pool
-	redis  *redis.Client
-	cipher messaging.ContentCipher
+	db        *pgxpool.Pool
+	redis     *redis.Client
+	cipher    messaging.ContentCipher
+	masterKey []byte
 }
 
 func NewService(db *pgxpool.Pool, redis *redis.Client, encryptionKey []byte) *Service {
-	return &Service{db: db, redis: redis, cipher: messaging.NewChannelCipher(encryptionKey)}
+	return &Service{db: db, redis: redis, cipher: messaging.NewChannelCipher(), masterKey: encryptionKey}
+}
+
+func (s *Service) communityDEK(ctx context.Context, channelID uuid.UUID) ([]byte, error) {
+	var wrapped []byte
+	err := s.db.QueryRow(ctx,
+		`SELECT c.encrypted_dek
+		 FROM communities c
+		 JOIN channels ch ON ch.community_id = c.id
+		 WHERE ch.id = $1`, channelID,
+	).Scan(&wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("load community DEK: %w", err)
+	}
+	return encryption.UnwrapKey(wrapped, s.masterKey)
 }
 
 type CreateCommunityRequest struct {
@@ -164,13 +180,22 @@ func (s *Service) CreateCommunity(ctx context.Context, ownerID uuid.UUID, req *C
 		UpdatedAt:   time.Now(),
 	}
 
-	err := database.WithTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
+	dek, err := encryption.GenerateDEK()
+	if err != nil {
+		return nil, err
+	}
+	wrappedDEK, err := encryption.WrapKey(dek, s.masterKey)
+	if err != nil {
+		return nil, err
+	}
+
+	err = database.WithTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		// Create community
 		_, err := tx.Exec(ctx,
-			`INSERT INTO communities (id, name, description, owner_id, is_public, is_open, member_count, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			`INSERT INTO communities (id, name, description, owner_id, is_public, is_open, member_count, encrypted_dek, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 			community.ID, community.Name, community.Description, community.OwnerID,
-			community.IsPublic, community.IsOpen, community.MemberCount, community.CreatedAt, community.UpdatedAt,
+			community.IsPublic, community.IsOpen, community.MemberCount, wrappedDEK, community.CreatedAt, community.UpdatedAt,
 		)
 		if err != nil {
 			return err
@@ -276,16 +301,25 @@ func (s *Service) ImportDiscordServer(ctx context.Context, req *DiscordImportReq
 		return nil, err
 	}
 
+	importDEK, err := encryption.GenerateDEK()
+	if err != nil {
+		return nil, err
+	}
+	wrappedDEK, err := encryption.WrapKey(importDEK, s.masterKey)
+	if err != nil {
+		return nil, err
+	}
+
 	response := &DiscordImportResponse{Community: community}
 	response.InviteCode = inviteCode
 	response.InviteURL = "/api/v1/communities/invite/" + inviteCode
 
 	err = database.WithTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx,
-			`INSERT INTO communities (id, name, description, icon_url, banner_url, owner_id, is_public, is_open, member_count, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+			`INSERT INTO communities (id, name, description, icon_url, banner_url, owner_id, is_public, is_open, member_count, encrypted_dek, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 			community.ID, community.Name, community.Description, community.IconURL, community.BannerURL, community.OwnerID,
-			community.IsPublic, community.IsOpen, community.MemberCount, community.CreatedAt, community.UpdatedAt,
+			community.IsPublic, community.IsOpen, community.MemberCount, wrappedDEK, community.CreatedAt, community.UpdatedAt,
 		)
 		if err != nil {
 			return err
@@ -447,7 +481,7 @@ func (s *Service) ImportDiscordServer(ctx context.Context, req *DiscordImportReq
 
 				importedContent := importedMessage.Content
 
-				encryptedContent, _, err := s.cipher.Encrypt(importedContent)
+				encryptedContent, _, err := s.cipher.Encrypt(importedContent, importDEK)
 				if err != nil {
 					return err
 				}

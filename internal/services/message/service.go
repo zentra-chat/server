@@ -17,6 +17,7 @@ import (
 	"github.com/zentra/server/internal/services/messaging"
 	"github.com/zentra/server/internal/services/notification"
 	"github.com/zentra/server/internal/utils"
+	"github.com/zentra/server/pkg/encryption"
 )
 
 var (
@@ -33,6 +34,7 @@ type Service struct {
 	channelService      ChannelServiceInterface
 	notificationService *notification.Service
 	cipher              messaging.ContentCipher
+	masterKey           []byte
 }
 
 type ChannelServiceInterface interface {
@@ -48,8 +50,23 @@ func NewService(db *pgxpool.Pool, redis *redis.Client, encryptionKey []byte, cha
 		db:             db,
 		redis:          redis,
 		channelService: channelService,
-		cipher:         messaging.NewChannelCipher(encryptionKey),
+		cipher:         messaging.NewChannelCipher(),
+		masterKey:      encryptionKey,
 	}
+}
+
+func (s *Service) communityDEK(ctx context.Context, channelID uuid.UUID) ([]byte, error) {
+	var wrapped []byte
+	err := s.db.QueryRow(ctx,
+		`SELECT c.encrypted_dek
+		 FROM communities c
+		 JOIN channels ch ON ch.community_id = c.id
+		 WHERE ch.id = $1`, channelID,
+	).Scan(&wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("load community DEK: %w", err)
+	}
+	return encryption.UnwrapKey(wrapped, s.masterKey)
 }
 
 // SetNotificationService wires the notification service into the message service after
@@ -136,8 +153,12 @@ func (s *Service) CreateMessage(ctx context.Context, channelID, userID uuid.UUID
 	linkPreviews := messaging.BuildLinkPreviews(ctx, req.Content)
 	linkPreviewJSON := messaging.EncodeLinkPreviews(linkPreviews)
 
-	// Encrypt message content
-	encryptedContent, _, err := s.cipher.Encrypt(req.Content)
+	key, err := s.communityDEK(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive channel key: %w", err)
+	}
+
+	encryptedContent, _, err := s.cipher.Encrypt(req.Content, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt message: %w", err)
 	}
@@ -173,7 +194,7 @@ func (s *Service) CreateMessage(ctx context.Context, channelID, userID uuid.UUID
 	msg.LinkPreviews = messaging.DecodeLinkPreviews(linkPreviewRaw)
 
 	// Decrypt for response
-	contentStr, err := s.cipher.Decrypt(encContent, nil)
+	contentStr, err := s.cipher.Decrypt(encContent, nil, key)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decrypt message after insert")
 		return nil, err
@@ -284,13 +305,19 @@ func (s *Service) GetMessage(ctx context.Context, messageID, userID uuid.UUID) (
 		return nil, err
 	}
 
-	// Decrypt content
-	contentStr, err := s.cipher.Decrypt(encContent, nil)
+	key, err := s.communityDEK(ctx, msg.ChannelID)
 	if err != nil {
-		contentErr := "[Decryption Error]"
-		msg.Content = &contentErr
+		log.Error().Err(err).Msg("Failed to derive channel key in GetMessage")
+		errStr := "[Decryption Error]"
+		msg.Content = &errStr
 	} else {
-		msg.Content = &contentStr
+		contentStr, err := s.cipher.Decrypt(encContent, nil, key)
+		if err != nil {
+			contentErr := "[Decryption Error]"
+			msg.Content = &contentErr
+		} else {
+			msg.Content = &contentStr
+		}
 	}
 	msg.LinkPreviews = messaging.DecodeLinkPreviews(linkPreviewRaw)
 
@@ -387,6 +414,11 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 	}
 	defer rows.Close()
 
+	channelKey, err := s.communityDEK(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive channel key: %w", err)
+	}
+
 	var messages []*MessageResponse
 	messageIDs := make([]uuid.UUID, 0)
 
@@ -407,7 +439,7 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 		}
 
 		// Decrypt content
-		contentStr, err := s.cipher.Decrypt(encContent, nil)
+		contentStr, err := s.cipher.Decrypt(encContent, nil, channelKey)
 		if err != nil {
 			errStr := "[Decryption Error]"
 			msg.Content = &errStr
@@ -478,11 +510,11 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 // UpdateMessage updates message content
 func (s *Service) UpdateMessage(ctx context.Context, messageID, userID uuid.UUID, req *UpdateMessageRequest) (*MessageResponse, error) {
 	// First check if user owns the message
-	var authorID uuid.UUID
+	var authorID, channelID uuid.UUID
 	err := s.db.QueryRow(ctx,
-		`SELECT author_id FROM messages WHERE id = $1 AND deleted_at IS NULL`,
+		`SELECT author_id, channel_id FROM messages WHERE id = $1 AND deleted_at IS NULL`,
 		messageID,
-	).Scan(&authorID)
+	).Scan(&authorID, &channelID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrMessageNotFound
@@ -494,8 +526,12 @@ func (s *Service) UpdateMessage(ctx context.Context, messageID, userID uuid.UUID
 		return nil, ErrNotMessageOwner
 	}
 
-	// Encrypt new content
-	encryptedContent, _, err := s.cipher.Encrypt(req.Content)
+	key, err := s.communityDEK(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive channel key: %w", err)
+	}
+
+	encryptedContent, _, err := s.cipher.Encrypt(req.Content, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt message: %w", err)
 	}
@@ -693,6 +729,11 @@ func (s *Service) GetPinnedMessages(ctx context.Context, channelID, userID uuid.
 		return nil, ErrInsufficientPerms
 	}
 
+	pinnedKey, err := s.communityDEK(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive channel key: %w", err)
+	}
+
 	query := `
 		SELECT m.id, m.channel_id, m.author_id, m.encrypted_content, m.reply_to_id,
 		       m.link_previews, m.is_pinned, m.is_edited, m.reactions, m.created_at, m.updated_at,
@@ -727,7 +768,7 @@ func (s *Service) GetPinnedMessages(ctx context.Context, channelID, userID uuid.
 			return nil, err
 		}
 
-		contentStr, err := s.cipher.Decrypt(encContent, nil)
+		contentStr, err := s.cipher.Decrypt(encContent, nil, pinnedKey)
 		if err != nil {
 			errStr := "[Decryption Error]"
 			msg.Content = &errStr
@@ -763,6 +804,11 @@ func (s *Service) SearchMessages(ctx context.Context, channelID, userID uuid.UUI
 
 	if limit <= 0 || limit > 50 {
 		limit = 25
+	}
+
+	searchKey, err := s.communityDEK(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive channel key: %w", err)
 	}
 
 	// Note: Searching encrypted content is complex. This is a simplified approach.
@@ -803,7 +849,7 @@ func (s *Service) SearchMessages(ctx context.Context, channelID, userID uuid.UUI
 			return nil, err
 		}
 
-		contentStr, err := s.cipher.Decrypt(encContent, nil)
+		contentStr, err := s.cipher.Decrypt(encContent, nil, searchKey)
 		if err != nil {
 			errStr := "[Decryption Error]"
 			msg.Content = &errStr
@@ -860,25 +906,31 @@ func (s *Service) getMessageAttachments(ctx context.Context, messageID uuid.UUID
 
 func (s *Service) getReplyPreview(ctx context.Context, messageID uuid.UUID) (*MessageReplyPreview, error) {
 	query := `
-		SELECT m.id, m.encrypted_content, m.author_id,
+		SELECT m.id, m.channel_id, m.encrypted_content, m.author_id,
 		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.id = $1`
 
 	var preview MessageReplyPreview
+	var channelID uuid.UUID
 	var encContent []byte
 	var author models.PublicUser
 
 	err := s.db.QueryRow(ctx, query, messageID).Scan(
-		&preview.ID, &encContent, &preview.AuthorID,
+		&preview.ID, &channelID, &encContent, &preview.AuthorID,
 		&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	contentStr, err := s.cipher.Decrypt(encContent, nil)
+	replyKey, err := s.communityDEK(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+
+	contentStr, err := s.cipher.Decrypt(encContent, nil, replyKey)
 	if err != nil {
 		preview.Content = "[Decryption Error]"
 	} else {
@@ -907,7 +959,7 @@ func (s *Service) batchGetReplyPreviews(ctx context.Context, messageIDs []uuid.U
 	}
 
 	query := `
-		SELECT m.id, m.encrypted_content, m.author_id,
+		SELECT m.id, m.channel_id, m.encrypted_content, m.author_id,
 		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
@@ -921,18 +973,24 @@ func (s *Service) batchGetReplyPreviews(ctx context.Context, messageIDs []uuid.U
 
 	for rows.Next() {
 		var preview MessageReplyPreview
+		var channelID uuid.UUID
 		var encContent []byte
 		var author models.PublicUser
 
 		err := rows.Scan(
-			&preview.ID, &encContent, &preview.AuthorID,
+			&preview.ID, &channelID, &encContent, &preview.AuthorID,
 			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
 		)
 		if err != nil {
 			continue
 		}
 
-		contentStr, err := s.cipher.Decrypt(encContent, nil)
+		batchKey, err := s.communityDEK(ctx, channelID)
+		if err != nil {
+			continue
+		}
+
+		contentStr, err := s.cipher.Decrypt(encContent, nil, batchKey)
 		if err != nil {
 			preview.Content = "[Decryption Error]"
 		} else {

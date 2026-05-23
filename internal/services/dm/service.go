@@ -16,6 +16,7 @@ import (
 	"github.com/zentra/server/internal/models"
 	"github.com/zentra/server/internal/services/messaging"
 	"github.com/zentra/server/internal/services/notification"
+	"github.com/zentra/server/pkg/encryption"
 )
 
 var (
@@ -34,6 +35,7 @@ type Service struct {
 	userService         UserServiceInterface
 	notificationService *notification.Service
 	cipher              messaging.ContentCipher
+	masterKey           []byte
 }
 
 type UserServiceInterface interface {
@@ -46,8 +48,21 @@ func NewService(db *pgxpool.Pool, redis *redis.Client, encryptionKey []byte, use
 		db:          db,
 		redis:       redis,
 		userService: userService,
-		cipher:      messaging.NewDMCipher(encryptionKey),
+		cipher:      messaging.NewDMCipher(),
+		masterKey:   encryptionKey,
 	}
+}
+
+func (s *Service) conversationDEK(ctx context.Context, conversationID uuid.UUID) ([]byte, error) {
+	var wrapped []byte
+	err := s.db.QueryRow(ctx,
+		`SELECT encrypted_dek FROM dm_conversations WHERE id = $1`,
+		conversationID,
+	).Scan(&wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("load conversation DEK: %w", err)
+	}
+	return encryption.UnwrapKey(wrapped, s.masterKey)
 }
 
 // SetNotificationService wires the notification service after construction
@@ -177,6 +192,15 @@ func (s *Service) CreateOrGetConversation(ctx context.Context, userID, otherUser
 		return nil, err
 	}
 
+	dek, err := encryption.GenerateDEK()
+	if err != nil {
+		return nil, err
+	}
+	wrappedDEK, err := encryption.WrapKey(dek, s.masterKey)
+	if err != nil {
+		return nil, err
+	}
+
 	now := time.Now()
 	convo = models.DMConversation{ID: uuid.New(), CreatedAt: now, UpdatedAt: now}
 
@@ -187,8 +211,8 @@ func (s *Service) CreateOrGetConversation(ctx context.Context, userID, otherUser
 	defer tx.Rollback(ctx)
 
 	_, err = tx.Exec(ctx,
-		`INSERT INTO dm_conversations (id, created_at, updated_at) VALUES ($1, $2, $2)`,
-		convo.ID, now,
+		`INSERT INTO dm_conversations (id, encrypted_dek, created_at, updated_at) VALUES ($1, $2, $3, $3)`,
+		convo.ID, wrappedDEK, now,
 	)
 	if err != nil {
 		return nil, err
@@ -327,6 +351,11 @@ func (s *Service) GetMessages(ctx context.Context, conversationID, userID uuid.U
 	}
 	defer rows.Close()
 
+	convKey, err := s.conversationDEK(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+
 	var messages []*DMMessageResponse
 	messageIDs := make([]uuid.UUID, 0)
 	for rows.Next() {
@@ -344,7 +373,7 @@ func (s *Service) GetMessages(ctx context.Context, conversationID, userID uuid.U
 		}
 		msg.LinkPreviews = messaging.DecodeLinkPreviews(linkPreviewRaw)
 
-		content, err := s.cipher.Decrypt(msg.EncryptedContent, nonce)
+		content, err := s.cipher.Decrypt(msg.EncryptedContent, nonce, convKey)
 		if err != nil {
 			content = "[Decryption Error]"
 		}
@@ -393,7 +422,12 @@ func (s *Service) SendMessage(ctx context.Context, conversationID, userID uuid.U
 	linkPreviews := messaging.BuildLinkPreviews(ctx, req.Content)
 	linkPreviewJSON := messaging.EncodeLinkPreviews(linkPreviews)
 
-	ciphertext, nonce, err := s.cipher.Encrypt(req.Content)
+	sendKey, err := s.conversationDEK(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	ciphertext, nonce, err := s.cipher.Encrypt(req.Content, sendKey)
 	if err != nil {
 		return nil, err
 	}
@@ -530,7 +564,12 @@ func (s *Service) GetMessage(ctx context.Context, messageID, userID uuid.UUID) (
 		return nil, ErrNotParticipant
 	}
 
-	content, err := s.cipher.Decrypt(msg.EncryptedContent, nonce)
+	getKey, err := s.conversationDEK(ctx, msg.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := s.cipher.Decrypt(msg.EncryptedContent, nonce, getKey)
 	if err != nil {
 		content = "[Decryption Error]"
 	}
@@ -580,7 +619,12 @@ func (s *Service) UpdateMessage(ctx context.Context, messageID, userID uuid.UUID
 	linkPreviews := messaging.BuildLinkPreviews(ctx, req.Content)
 	linkPreviewJSON := messaging.EncodeLinkPreviews(linkPreviews)
 
-	ciphertext, nonce, err := s.cipher.Encrypt(req.Content)
+	updateKey, err := s.conversationDEK(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	ciphertext, nonce, err := s.cipher.Encrypt(req.Content, updateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -815,7 +859,12 @@ func (s *Service) getLastMessage(ctx context.Context, conversationID uuid.UUID, 
 		return nil, err
 	}
 
-	content, err := s.cipher.Decrypt(msg.EncryptedContent, nonce)
+	lastKey, err := s.conversationDEK(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := s.cipher.Decrypt(msg.EncryptedContent, nonce, lastKey)
 	if err != nil {
 		content = "[Decryption Error]"
 	}
@@ -915,26 +964,32 @@ func (s *Service) buildReactions(reactions map[string][]uuid.UUID, userID uuid.U
 
 func (s *Service) getReplyPreview(ctx context.Context, messageID uuid.UUID) (*DMReplyPreview, error) {
 	query := `
-		SELECT m.id, m.sender_id, m.encrypted_content, m.nonce,
+		SELECT m.id, m.conversation_id, m.sender_id, m.encrypted_content, m.nonce,
 		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM direct_messages m
 		JOIN users u ON u.id = m.sender_id
 		WHERE m.id = $1 AND m.deleted_at IS NULL`
 
 	var preview DMReplyPreview
+	var convID uuid.UUID
 	var encContent []byte
 	var nonce []byte
 	var sender models.PublicUser
 
 	err := s.db.QueryRow(ctx, query, messageID).Scan(
-		&preview.ID, &preview.SenderID, &encContent, &nonce,
+		&preview.ID, &convID, &preview.SenderID, &encContent, &nonce,
 		&sender.ID, &sender.Username, &sender.DisplayName, &sender.AvatarURL, &sender.Bio, &sender.Status, &sender.CustomStatus, &sender.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	content, err := s.cipher.Decrypt(encContent, nonce)
+	replyKey, err := s.conversationDEK(ctx, convID)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := s.cipher.Decrypt(encContent, nonce, replyKey)
 	if err != nil {
 		content = "[Decryption Error]"
 	} else if len(content) > 100 {

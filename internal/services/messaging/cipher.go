@@ -10,48 +10,44 @@ import (
 )
 
 type ContentCipher interface {
-	Encrypt(content string) (ciphertext []byte, nonce []byte, err error)
-	Decrypt(ciphertext []byte, nonce []byte) (string, error)
+	Encrypt(content string, key []byte) (ciphertext []byte, nonce []byte, err error)
+	Decrypt(ciphertext []byte, nonce []byte, key []byte) (string, error)
 }
 
-type ChannelCipher struct {
-	key []byte
+type ChannelCipher struct{}
+
+type DMCipher struct{}
+
+func NewChannelCipher() *ChannelCipher {
+	return &ChannelCipher{}
 }
 
-type DMCipher struct {
-	key []byte
+func NewDMCipher() *DMCipher {
+	return &DMCipher{}
 }
 
-func NewChannelCipher(key []byte) *ChannelCipher {
-	return &ChannelCipher{key: key}
-}
-
-func NewDMCipher(key []byte) *DMCipher {
-	return &DMCipher{key: key}
-}
-
-func (c *ChannelCipher) Encrypt(content string) ([]byte, []byte, error) {
-	ciphertext, err := encryption.Encrypt([]byte(content), c.key)
+func (c *ChannelCipher) Encrypt(content string, key []byte) ([]byte, []byte, error) {
+	ciphertext, err := encryption.Encrypt([]byte(content), key)
 	if err != nil {
 		return nil, nil, err
 	}
 	return ciphertext, nil, nil
 }
 
-func (c *ChannelCipher) Decrypt(ciphertext []byte, _ []byte) (string, error) {
-	plaintext, err := encryption.Decrypt(ciphertext, c.key)
+func (c *ChannelCipher) Decrypt(ciphertext []byte, _ []byte, key []byte) (string, error) {
+	plaintext, err := encryption.Decrypt(ciphertext, key)
 	if err != nil {
 		return "", err
 	}
 	return string(plaintext), nil
 }
 
-func (c *DMCipher) Encrypt(content string) ([]byte, []byte, error) {
-	if len(c.key) != 32 {
+func (c *DMCipher) Encrypt(content string, key []byte) ([]byte, []byte, error) {
+	if len(key) != 32 {
 		return nil, nil, encryption.ErrInvalidKeyLength
 	}
 
-	block, err := aes.NewCipher(c.key)
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -70,12 +66,12 @@ func (c *DMCipher) Encrypt(content string) ([]byte, []byte, error) {
 	return ciphertext, nonce, nil
 }
 
-func (c *DMCipher) Decrypt(ciphertext, nonce []byte) (string, error) {
-	if len(c.key) != 32 {
+func (c *DMCipher) Decrypt(ciphertext, nonce, key []byte) (string, error) {
+	if len(key) != 32 {
 		return "", encryption.ErrInvalidKeyLength
 	}
 
-	block, err := aes.NewCipher(c.key)
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
 	}
