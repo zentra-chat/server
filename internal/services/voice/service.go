@@ -66,6 +66,7 @@ func (s *Service) JoinChannel(ctx context.Context, channelID, userID uuid.UUID) 
 		IsSelfMuted:     false,
 		IsSelfDeaf:      false,
 		IsScreenSharing: false,
+		IsWebcamOn:      false,
 		JoinedAt:        time.Now(),
 	}
 
@@ -88,11 +89,11 @@ func (s *Service) JoinChannel(ctx context.Context, channelID, userID uuid.UUID) 
 	}
 
 	_, err = tx.Exec(ctx,
-		`INSERT INTO voice_states (id, channel_id, user_id, is_muted, is_deafened, is_self_muted, is_self_deafened, is_screen_sharing, joined_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (channel_id, user_id) DO UPDATE SET joined_at = $9`,
+		`INSERT INTO voice_states (id, channel_id, user_id, is_muted, is_deafened, is_self_muted, is_self_deafened, is_screen_sharing, is_webcam_on, joined_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (channel_id, user_id) DO UPDATE SET joined_at = $10`,
 		state.ID, state.ChannelID, state.UserID, state.IsMuted, state.IsDeafened,
-		state.IsSelfMuted, state.IsSelfDeaf, state.IsScreenSharing, state.JoinedAt,
+		state.IsSelfMuted, state.IsSelfDeaf, state.IsScreenSharing, state.IsWebcamOn, state.JoinedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -159,8 +160,8 @@ func (s *Service) DisconnectUser(ctx context.Context, userID uuid.UUID) ([]uuid.
 	return channelIDs, err
 }
 
-// UpdateVoiceState updates a user's mute/deafen state
-func (s *Service) UpdateVoiceState(ctx context.Context, channelID, userID uuid.UUID, isSelfMuted, isSelfDeafened, isScreenSharing *bool) (*models.VoiceState, error) {
+// UpdateVoiceState updates a user's voice state (mute/deafen/screen/webcam)
+func (s *Service) UpdateVoiceState(ctx context.Context, channelID, userID uuid.UUID, isSelfMuted, isSelfDeafened, isScreenSharing, isWebcamOn *bool) (*models.VoiceState, error) {
 	state, err := s.GetUserVoiceState(ctx, channelID, userID)
 	if err != nil {
 		return nil, ErrNotInVoiceChannel
@@ -175,10 +176,13 @@ func (s *Service) UpdateVoiceState(ctx context.Context, channelID, userID uuid.U
 	if isScreenSharing != nil {
 		state.IsScreenSharing = *isScreenSharing
 	}
+	if isWebcamOn != nil {
+		state.IsWebcamOn = *isWebcamOn
+	}
 
 	_, err = s.db.Exec(ctx,
-		`UPDATE voice_states SET is_self_muted = $3, is_self_deafened = $4, is_screen_sharing = $5 WHERE channel_id = $1 AND user_id = $2`,
-		channelID, userID, state.IsSelfMuted, state.IsSelfDeaf, state.IsScreenSharing,
+		`UPDATE voice_states SET is_self_muted = $3, is_self_deafened = $4, is_screen_sharing = $5, is_webcam_on = $6 WHERE channel_id = $1 AND user_id = $2`,
+		channelID, userID, state.IsSelfMuted, state.IsSelfDeaf, state.IsScreenSharing, state.IsWebcamOn,
 	)
 	if err != nil {
 		return nil, err
@@ -220,7 +224,7 @@ func (s *Service) ServerMuteUser(ctx context.Context, channelID, targetUserID, a
 // GetChannelVoiceStates returns all voice states for a channel with user info
 func (s *Service) GetChannelVoiceStates(ctx context.Context, channelID uuid.UUID) ([]*models.VoiceStateWithUser, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT vs.id, vs.channel_id, vs.user_id, vs.is_muted, vs.is_deafened, vs.is_self_muted, vs.is_self_deafened, vs.is_screen_sharing, vs.joined_at,
+		`SELECT vs.id, vs.channel_id, vs.user_id, vs.is_muted, vs.is_deafened, vs.is_self_muted, vs.is_self_deafened, vs.is_screen_sharing, vs.is_webcam_on, vs.joined_at,
 			u.id, u.username, u.display_name, u.avatar_url, u.status
 		FROM voice_states vs
 		JOIN users u ON u.id = vs.user_id
@@ -240,7 +244,7 @@ func (s *Service) GetChannelVoiceStates(ctx context.Context, channelID uuid.UUID
 		}
 		err := rows.Scan(
 			&vs.ID, &vs.ChannelID, &vs.UserID, &vs.IsMuted, &vs.IsDeafened,
-			&vs.IsSelfMuted, &vs.IsSelfDeaf, &vs.IsScreenSharing, &vs.JoinedAt,
+			&vs.IsSelfMuted, &vs.IsSelfDeaf, &vs.IsScreenSharing, &vs.IsWebcamOn, &vs.JoinedAt,
 			&vs.User.ID, &vs.User.Username, &vs.User.DisplayName, &vs.User.AvatarURL, &vs.User.Status,
 		)
 		if err != nil {
@@ -262,12 +266,12 @@ func (s *Service) GetChannelVoiceStates(ctx context.Context, channelID uuid.UUID
 func (s *Service) GetUserVoiceState(ctx context.Context, channelID, userID uuid.UUID) (*models.VoiceState, error) {
 	state := &models.VoiceState{}
 	err := s.db.QueryRow(ctx,
-		`SELECT id, channel_id, user_id, is_muted, is_deafened, is_self_muted, is_self_deafened, is_screen_sharing, joined_at
+		`SELECT id, channel_id, user_id, is_muted, is_deafened, is_self_muted, is_self_deafened, is_screen_sharing, is_webcam_on, joined_at
 		FROM voice_states WHERE channel_id = $1 AND user_id = $2`,
 		channelID, userID,
 	).Scan(
 		&state.ID, &state.ChannelID, &state.UserID, &state.IsMuted, &state.IsDeafened,
-		&state.IsSelfMuted, &state.IsSelfDeaf, &state.IsScreenSharing, &state.JoinedAt,
+		&state.IsSelfMuted, &state.IsSelfDeaf, &state.IsScreenSharing, &state.IsWebcamOn, &state.JoinedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -282,12 +286,12 @@ func (s *Service) GetUserVoiceState(ctx context.Context, channelID, userID uuid.
 func (s *Service) GetUserCurrentVoiceChannel(ctx context.Context, userID uuid.UUID) (*models.VoiceState, error) {
 	state := &models.VoiceState{}
 	err := s.db.QueryRow(ctx,
-		`SELECT id, channel_id, user_id, is_muted, is_deafened, is_self_muted, is_self_deafened, is_screen_sharing, joined_at
+		`SELECT id, channel_id, user_id, is_muted, is_deafened, is_self_muted, is_self_deafened, is_screen_sharing, is_webcam_on, joined_at
 		FROM voice_states WHERE user_id = $1 LIMIT 1`,
 		userID,
 	).Scan(
 		&state.ID, &state.ChannelID, &state.UserID, &state.IsMuted, &state.IsDeafened,
-		&state.IsSelfMuted, &state.IsSelfDeaf, &state.IsScreenSharing, &state.JoinedAt,
+		&state.IsSelfMuted, &state.IsSelfDeaf, &state.IsScreenSharing, &state.IsWebcamOn, &state.JoinedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

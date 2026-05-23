@@ -1,0 +1,1 @@
+ALTER TABLE voice_states ADD COLUMN is_webcam_on BOOLEAN NOT NULL DEFAULT FALSE;

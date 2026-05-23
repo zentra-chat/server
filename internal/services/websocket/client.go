@@ -383,6 +383,7 @@ func (c *Client) handleVoiceStateUpdate(data json.RawMessage) {
 		IsSelfMuted     *bool  `json:"isSelfMuted"`
 		IsSelfDeafened  *bool  `json:"isSelfDeafened"`
 		IsScreenSharing *bool  `json:"isScreenSharing"`
+		IsWebcamOn      *bool  `json:"isWebcamOn"`
 	}
 	if err := json.Unmarshal(data, &req); err != nil {
 		return
@@ -397,7 +398,7 @@ func (c *Client) handleVoiceStateUpdate(data json.RawMessage) {
 		return
 	}
 
-	state, err := c.Hub.voiceService.UpdateVoiceState(context.Background(), channelID, c.UserID, req.IsSelfMuted, req.IsSelfDeafened, req.IsScreenSharing)
+	state, err := c.Hub.voiceService.UpdateVoiceState(context.Background(), channelID, c.UserID, req.IsSelfMuted, req.IsSelfDeafened, req.IsScreenSharing, req.IsWebcamOn)
 	if err != nil {
 		return
 	}

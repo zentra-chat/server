@@ -61,6 +61,7 @@ type VoiceState struct {
 	IsSelfMuted     bool      `json:"isSelfMuted" db:"is_self_muted"`
 	IsSelfDeaf      bool      `json:"isSelfDeafened" db:"is_self_deafened"`
 	IsScreenSharing bool      `json:"isScreenSharing" db:"is_screen_sharing"`
+	IsWebcamOn      bool      `json:"isWebcamOn" db:"is_webcam_on"`
 	JoinedAt        time.Time `json:"joinedAt" db:"joined_at"`
 }
 
