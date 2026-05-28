@@ -28,7 +28,6 @@ var (
 	ErrPluginNotFound     = errors.New("plugin not found")
 	ErrAlreadyInstalled   = errors.New("plugin is already installed on this community")
 	ErrNotInstalled       = errors.New("plugin is not installed on this community")
-	ErrBuiltInPlugin      = errors.New("cannot uninstall a built-in plugin")
 	ErrSourceNotFound     = errors.New("plugin source not found")
 	ErrSourceExists       = errors.New("source already exists for this community")
 	ErrInvalidPermissions = errors.New("granted permissions exceed what the plugin requests")
@@ -297,12 +296,12 @@ func (s *Service) GetPlugin(ctx context.Context, pluginID uuid.UUID) (*models.Pl
 	plugin := &models.Plugin{}
 	err := s.db.QueryRow(ctx,
 		`SELECT id, slug, name, description, author, version, homepage_url, source_url, icon_url,
-		        requested_permissions, manifest, built_in, source, is_verified, created_at, updated_at
+		        requested_permissions, manifest, source, is_verified, created_at, updated_at
 		 FROM plugins WHERE id = $1`, pluginID,
 	).Scan(
 		&plugin.ID, &plugin.Slug, &plugin.Name, &plugin.Description, &plugin.Author, &plugin.Version,
 		&plugin.HomepageURL, &plugin.SourceURL, &plugin.IconURL, &plugin.RequestedPermissions,
-		&plugin.Manifest, &plugin.BuiltIn, &plugin.Source, &plugin.IsVerified, &plugin.CreatedAt, &plugin.UpdatedAt,
+		&plugin.Manifest, &plugin.Source, &plugin.IsVerified, &plugin.CreatedAt, &plugin.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -318,12 +317,12 @@ func (s *Service) GetPluginBySlug(ctx context.Context, slug string) (*models.Plu
 	plugin := &models.Plugin{}
 	err := s.db.QueryRow(ctx,
 		`SELECT id, slug, name, description, author, version, homepage_url, source_url, icon_url,
-		        requested_permissions, manifest, built_in, source, is_verified, created_at, updated_at
+		        requested_permissions, manifest, source, is_verified, created_at, updated_at
 		 FROM plugins WHERE slug = $1`, slug,
 	).Scan(
 		&plugin.ID, &plugin.Slug, &plugin.Name, &plugin.Description, &plugin.Author, &plugin.Version,
 		&plugin.HomepageURL, &plugin.SourceURL, &plugin.IconURL, &plugin.RequestedPermissions,
-		&plugin.Manifest, &plugin.BuiltIn, &plugin.Source, &plugin.IsVerified, &plugin.CreatedAt, &plugin.UpdatedAt,
+		&plugin.Manifest, &plugin.Source, &plugin.IsVerified, &plugin.CreatedAt, &plugin.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -337,7 +336,7 @@ func (s *Service) GetPluginBySlug(ctx context.Context, slug string) (*models.Plu
 // ListAvailablePlugins returns all plugins in the system (for marketplace browsing)
 func (s *Service) ListAvailablePlugins(ctx context.Context, source string) ([]*models.Plugin, error) {
 	query := `SELECT id, slug, name, description, author, version, homepage_url, source_url, icon_url,
-	                  requested_permissions, manifest, built_in, source, is_verified, created_at, updated_at
+	                  requested_permissions, manifest, source, is_verified, created_at, updated_at
 	           FROM plugins`
 	args := []any{}
 
@@ -345,7 +344,7 @@ func (s *Service) ListAvailablePlugins(ctx context.Context, source string) ([]*m
 		query += " WHERE source = $1"
 		args = append(args, source)
 	}
-	query += " ORDER BY built_in DESC, name ASC"
+	query += " ORDER BY name ASC"
 
 	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
@@ -359,7 +358,7 @@ func (s *Service) ListAvailablePlugins(ctx context.Context, source string) ([]*m
 		if err := rows.Scan(
 			&p.ID, &p.Slug, &p.Name, &p.Description, &p.Author, &p.Version,
 			&p.HomepageURL, &p.SourceURL, &p.IconURL, &p.RequestedPermissions,
-			&p.Manifest, &p.BuiltIn, &p.Source, &p.IsVerified, &p.CreatedAt, &p.UpdatedAt,
+			&p.Manifest, &p.Source, &p.IsVerified, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan plugin: %w", err)
 		}
@@ -374,7 +373,7 @@ func (s *Service) SearchPlugins(ctx context.Context, query string) ([]*models.Pl
 
 	rows, err := s.db.Query(ctx,
 		`SELECT id, slug, name, description, author, version, homepage_url, source_url, icon_url,
-		        requested_permissions, manifest, built_in, source, is_verified, created_at, updated_at
+		        requested_permissions, manifest, source, is_verified, created_at, updated_at
 		 FROM plugins
 		 WHERE name ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%'
 		 ORDER BY is_verified DESC, name ASC
@@ -391,7 +390,7 @@ func (s *Service) SearchPlugins(ctx context.Context, query string) ([]*models.Pl
 		if err := rows.Scan(
 			&p.ID, &p.Slug, &p.Name, &p.Description, &p.Author, &p.Version,
 			&p.HomepageURL, &p.SourceURL, &p.IconURL, &p.RequestedPermissions,
-			&p.Manifest, &p.BuiltIn, &p.Source, &p.IsVerified, &p.CreatedAt, &p.UpdatedAt,
+			&p.Manifest, &p.Source, &p.IsVerified, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan plugin: %w", err)
 		}
@@ -446,14 +445,6 @@ func (s *Service) InstallPlugin(ctx context.Context, communityID, pluginID, inst
 
 // UninstallPlugin removes a plugin from a community
 func (s *Service) UninstallPlugin(ctx context.Context, communityID, pluginID, actorID uuid.UUID) error {
-	plugin, err := s.GetPlugin(ctx, pluginID)
-	if err != nil {
-		return err
-	}
-	if plugin.BuiltIn {
-		return ErrBuiltInPlugin
-	}
-
 	tag, err := s.db.Exec(ctx,
 		`DELETE FROM community_plugins WHERE community_id = $1 AND plugin_id = $2`,
 		communityID, pluginID,
@@ -471,14 +462,6 @@ func (s *Service) UninstallPlugin(ctx context.Context, communityID, pluginID, ac
 
 // TogglePlugin enables or disables a plugin on a community without removing it
 func (s *Service) TogglePlugin(ctx context.Context, communityID, pluginID, actorID uuid.UUID, enabled bool) error {
-	plugin, err := s.GetPlugin(ctx, pluginID)
-	if err != nil {
-		return err
-	}
-	if plugin.BuiltIn {
-		return ErrBuiltInPlugin
-	}
-
 	tag, err := s.db.Exec(ctx,
 		`UPDATE community_plugins SET enabled = $3, updated_at = NOW()
 		 WHERE community_id = $1 AND plugin_id = $2`,
@@ -551,11 +534,11 @@ func (s *Service) GetCommunityPlugins(ctx context.Context, communityID uuid.UUID
 		`SELECT cp.id, cp.community_id, cp.plugin_id, cp.enabled, cp.granted_permissions,
 		        cp.config, cp.installed_by, cp.installed_at, cp.updated_at,
 		        p.id, p.slug, p.name, p.description, p.author, p.version, p.homepage_url, p.source_url, p.icon_url,
-		        p.requested_permissions, p.manifest, p.built_in, p.source, p.is_verified, p.created_at, p.updated_at
+		        p.requested_permissions, p.manifest, p.source, p.is_verified, p.created_at, p.updated_at
 		 FROM community_plugins cp
 		 JOIN plugins p ON p.id = cp.plugin_id
 		 WHERE cp.community_id = $1
-		 ORDER BY p.built_in DESC, p.name ASC`, communityID,
+		 ORDER BY p.name ASC`, communityID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get community plugins: %w", err)
@@ -570,7 +553,7 @@ func (s *Service) GetCommunityPlugins(ctx context.Context, communityID uuid.UUID
 			&cp.ID, &cp.CommunityID, &cp.PluginID, &cp.Enabled, &cp.GrantedPermissions,
 			&cp.Config, &cp.InstalledBy, &cp.InstalledAt, &cp.UpdatedAt,
 			&p.ID, &p.Slug, &p.Name, &p.Description, &p.Author, &p.Version, &p.HomepageURL, &p.SourceURL, &p.IconURL,
-			&p.RequestedPermissions, &p.Manifest, &p.BuiltIn, &p.Source, &p.IsVerified, &p.CreatedAt, &p.UpdatedAt,
+			&p.RequestedPermissions, &p.Manifest, &p.Source, &p.IsVerified, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan community plugin: %w", err)
 		}
@@ -588,7 +571,7 @@ func (s *Service) GetCommunityPlugin(ctx context.Context, communityID, pluginID 
 		`SELECT cp.id, cp.community_id, cp.plugin_id, cp.enabled, cp.granted_permissions,
 		        cp.config, cp.installed_by, cp.installed_at, cp.updated_at,
 		        p.id, p.slug, p.name, p.description, p.author, p.version, p.homepage_url, p.source_url, p.icon_url,
-		        p.requested_permissions, p.manifest, p.built_in, p.source, p.is_verified, p.created_at, p.updated_at
+		        p.requested_permissions, p.manifest, p.source, p.is_verified, p.created_at, p.updated_at
 		 FROM community_plugins cp
 		 JOIN plugins p ON p.id = cp.plugin_id
 		 WHERE cp.community_id = $1 AND cp.plugin_id = $2`, communityID, pluginID,
@@ -596,7 +579,7 @@ func (s *Service) GetCommunityPlugin(ctx context.Context, communityID, pluginID 
 		&cp.ID, &cp.CommunityID, &cp.PluginID, &cp.Enabled, &cp.GrantedPermissions,
 		&cp.Config, &cp.InstalledBy, &cp.InstalledAt, &cp.UpdatedAt,
 		&p.ID, &p.Slug, &p.Name, &p.Description, &p.Author, &p.Version, &p.HomepageURL, &p.SourceURL, &p.IconURL,
-		&p.RequestedPermissions, &p.Manifest, &p.BuiltIn, &p.Source, &p.IsVerified, &p.CreatedAt, &p.UpdatedAt,
+		&p.RequestedPermissions, &p.Manifest, &p.Source, &p.IsVerified, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -730,8 +713,7 @@ func (s *Service) SyncFromSource(ctx context.Context, sourceURL string) (int, er
 			   requested_permissions = EXCLUDED.requested_permissions,
 			   manifest = EXCLUDED.manifest,
 			   is_verified = EXCLUDED.is_verified,
-			   updated_at = NOW()
-			 WHERE plugins.built_in = FALSE`,
+			   updated_at = NOW()`,
 			p.Slug, p.Name, p.Description, p.Author, p.Version, p.HomepageURL, p.SourceURL, p.IconURL,
 			p.RequestedPermissions, p.Manifest, sourceURL, p.IsVerified,
 		)
@@ -743,22 +725,6 @@ func (s *Service) SyncFromSource(ctx context.Context, sourceURL string) (int, er
 	}
 
 	return count, nil
-}
-
-// EnsureBuiltInPluginsInstalled makes sure every community has the core plugin.
-// Called at startup or when a new community is created.
-func (s *Service) EnsureBuiltInPluginsInstalled(ctx context.Context, communityID, ownerID uuid.UUID) error {
-	_, err := s.db.Exec(ctx,
-		`INSERT INTO community_plugins (community_id, plugin_id, enabled, granted_permissions, installed_by)
-		 SELECT $1, p.id, TRUE, p.requested_permissions, $2
-		 FROM plugins p WHERE p.built_in = TRUE
-		 ON CONFLICT (community_id, plugin_id) DO NOTHING`,
-		communityID, ownerID,
-	)
-	if err != nil {
-		return fmt.Errorf("auto-install built-in plugins: %w", err)
-	}
-	return nil
 }
 
 // GetPluginAuditLog returns recent plugin actions for a community

@@ -156,7 +156,7 @@ func (h *Handler) GetPlugin(w http.ResponseWriter, r *http.Request) {
 
 // GetCommunityPlugins lists all plugins on a community
 func (h *Handler) GetCommunityPlugins(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.RequireAuth(r.Context())
+	_, err := middleware.RequireAuth(r.Context())
 	if err != nil {
 		utils.RespondError(w, http.StatusUnauthorized, "Unauthorized")
 		return
@@ -165,11 +165,6 @@ func (h *Handler) GetCommunityPlugins(w http.ResponseWriter, r *http.Request) {
 	communityID, err := uuid.Parse(chi.URLParam(r, "communityId"))
 	if err != nil {
 		utils.RespondError(w, http.StatusBadRequest, "Invalid community ID")
-		return
-	}
-
-	if err := h.service.EnsureBuiltInPluginsInstalled(r.Context(), communityID, userID); err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, "Failed to initialize built-in plugins")
 		return
 	}
 
@@ -290,8 +285,6 @@ func (h *Handler) UninstallPlugin(w http.ResponseWriter, r *http.Request) {
 			utils.RespondError(w, http.StatusNotFound, "Plugin not found")
 		case ErrNotInstalled:
 			utils.RespondError(w, http.StatusNotFound, "Plugin not installed")
-		case ErrBuiltInPlugin:
-			utils.RespondError(w, http.StatusForbidden, "Cannot uninstall built-in plugins")
 		default:
 			utils.RespondError(w, http.StatusInternalServerError, "Failed to uninstall plugin")
 		}
@@ -333,8 +326,6 @@ func (h *Handler) TogglePlugin(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.TogglePlugin(r.Context(), communityID, pluginID, userID, req.Enabled); err != nil {
 		switch err {
-		case ErrBuiltInPlugin:
-			utils.RespondError(w, http.StatusForbidden, "Cannot toggle built-in plugins")
 		case ErrNotInstalled:
 			utils.RespondError(w, http.StatusNotFound, "Plugin not installed")
 		default:

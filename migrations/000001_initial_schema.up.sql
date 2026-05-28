@@ -511,30 +511,6 @@ CREATE TABLE IF NOT EXISTS channel_read_states (
 CREATE INDEX IF NOT EXISTS idx_channel_read_states_user ON channel_read_states(user_id);
 CREATE INDEX IF NOT EXISTS idx_channel_read_states_channel ON channel_read_states(channel_id);
 
--- Seed core plugin
-INSERT INTO plugins (slug, name, description, author, version, requested_permissions, manifest, built_in, source, is_verified)
-VALUES (
-    'core',
-    'Zentra Core',
-    'Built-in plugin providing the default channel types and base features. This plugin is always active on every server.',
-    'Zentra',
-    '1.0.0',
-    ~0::BIGINT,
-    '{
-        "channelTypes": ["text", "announcement", "gallery", "forum", "voice"],
-        "commands": [],
-        "triggers": [],
-        "hooks": ["channel_registry"],
-        "frontendBundle": ""
-    }'::JSONB,
-    TRUE,
-    'official',
-    TRUE
-) ON CONFLICT (slug) DO NOTHING;
-
-UPDATE channel_type_definitions
-SET plugin_id = (SELECT id::TEXT FROM plugins WHERE slug = 'core')
-WHERE built_in = TRUE AND plugin_id IS NULL;
 
 -- updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()

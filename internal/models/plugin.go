@@ -83,7 +83,6 @@ type Plugin struct {
 	IconURL              *string         `json:"iconUrl,omitempty" db:"icon_url"`
 	RequestedPermissions int64           `json:"requestedPermissions" db:"requested_permissions"`
 	Manifest             json.RawMessage `json:"manifest" db:"manifest"`
-	BuiltIn              bool            `json:"builtIn" db:"built_in"`
 	Source               string          `json:"source" db:"source"`
 	IsVerified           bool            `json:"isVerified" db:"is_verified"`
 	WASMObjectKey        *string         `json:"wasmObjectKey,omitempty" db:"wasm_object_key"`
