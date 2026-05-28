@@ -126,8 +126,8 @@ func main() {
 	voiceService := voice.NewService(db, channelService, userService)
 	webhookService := webhook.NewService(db, redisClient, encKey, channelService, mediaService)
 
-	// Initialize plugin service
-	pluginService := plugin.NewService(db, channelTypeRegistry)
+	// Initialize plugin service with WASM runtime
+	pluginService := plugin.NewService(db, channelTypeRegistry, redisClient, encKey)
 
 	// Initialize admin service
 	adminService := admin.NewService(db)

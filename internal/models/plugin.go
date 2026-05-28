@@ -24,15 +24,50 @@ const (
 	PluginPermReactToMessages                   // can add reactions
 )
 
+// ArgDef describes a single argument for a slash command.
+type ArgDef struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Required    bool   `json:"required"`
+	Description string `json:"description,omitempty"`
+}
+
+// CommandDef describes a slash command provided by a plugin.
+type CommandDef struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Args        []ArgDef `json:"args,omitempty"`
+	Permissions int64    `json:"permissions,omitempty"`
+}
+
+// ChannelTypeDef describes a custom channel type that a plugin registers.
+type ChannelTypeDef struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Icon        string `json:"icon"`
+	// ViewFrame is the custom React component to render for this channel type
+	ViewFrame string `json:"viewFrame,omitempty"`
+}
+
+// EventTrigger describes what events a plugin subscribes to.
+type EventTrigger struct {
+	Event string `json:"event"`
+	// Filter is an optional JSONPath expression to match event payloads
+	Filter string `json:"filter,omitempty"`
+}
+
 // PluginManifest is the structured content inside the manifest JSONB column.
 // It declares everything the plugin provides: channel types, commands, hooks, etc.
 type PluginManifest struct {
-	ChannelTypes []string `json:"channelTypes,omitempty"`
-	Commands     []string `json:"commands,omitempty"`
-	Triggers     []string `json:"triggers,omitempty"`
-	Hooks        []string `json:"hooks,omitempty"`
+	ChannelTypes []ChannelTypeDef `json:"channelTypes,omitempty"`
+	Commands     []CommandDef     `json:"commands,omitempty"`
+	Triggers     []EventTrigger   `json:"triggers,omitempty"`
+	Hooks        []string         `json:"hooks,omitempty"`
 	// URL to the frontend bundle (JS) that registers custom components
 	FrontendBundle string `json:"frontendBundle,omitempty"`
+	// WASM runtime module reference
+	WASMModule string `json:"wasmModule,omitempty"`
 }
 
 // Plugin represents a plugin available for installation
@@ -51,6 +86,8 @@ type Plugin struct {
 	BuiltIn              bool            `json:"builtIn" db:"built_in"`
 	Source               string          `json:"source" db:"source"`
 	IsVerified           bool            `json:"isVerified" db:"is_verified"`
+	WASMObjectKey        *string         `json:"wasmObjectKey,omitempty" db:"wasm_object_key"`
+	UIBundleObjectKey    *string         `json:"uiBundleObjectKey,omitempty" db:"ui_bundle_object_key"`
 	CreatedAt            time.Time       `json:"createdAt" db:"created_at"`
 	UpdatedAt            time.Time       `json:"updatedAt" db:"updated_at"`
 }

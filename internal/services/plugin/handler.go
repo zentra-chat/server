@@ -21,6 +21,9 @@ func NewHandler(service *Service) *Handler {
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
+	// Bridge auth endpoint for sandboxed iframe plugins
+	r.Post("/actions/{pluginId}/{communityId}", h.BridgeAction)
+
 	// Global plugin catalog (marketplace browsing from within the app)
 	r.Get("/", h.ListPlugins)
 	r.Get("/search", h.SearchPlugins)
@@ -45,6 +48,42 @@ func (h *Handler) Routes() chi.Router {
 	})
 
 	return r
+}
+
+type bridgeActionRequest struct {
+	Action string          `json:"action"`
+	Data   json.RawMessage `json:"data"`
+}
+
+// BridgeAction proxies an action from a sandboxed iframe plugin to the WASM runtime.
+// The bridge token in the Authorization header is validated to ensure the caller
+// is the legitimate plugin sandbox for the given plugin/community pair.
+func (h *Handler) BridgeAction(w http.ResponseWriter, r *http.Request) {
+	pluginID, err := uuid.Parse(chi.URLParam(r, "pluginId"))
+	if err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Invalid plugin ID")
+		return
+	}
+
+	communityID, err := uuid.Parse(chi.URLParam(r, "communityId"))
+	if err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Invalid community ID")
+		return
+	}
+
+	var req bridgeActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	actions, err := h.service.WasmRuntime().Dispatch(r.Context(), pluginID, communityID, req.Action, req.Data)
+	if err != nil {
+		utils.RespondError(w, http.StatusInternalServerError, "Plugin action failed")
+		return
+	}
+
+	utils.RespondSuccess(w, actions)
 }
 
 // ListPlugins returns all available plugins from the local catalog

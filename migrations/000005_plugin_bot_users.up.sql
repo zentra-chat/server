@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS plugin_bot_users (
+    plugin_id UUID PRIMARY KEY REFERENCES plugins(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
