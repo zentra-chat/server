@@ -205,6 +205,22 @@ func (s *Service) MarkRead(ctx context.Context, notifID, userID uuid.UUID) error
 	return nil
 }
 
+// MarkChannelRead marks all mention and reply notifications in a channel as read.
+func (s *Service) MarkChannelRead(ctx context.Context, channelID, userID uuid.UUID) error {
+	_, err := s.db.Exec(ctx,
+		`UPDATE notifications SET is_read = TRUE
+		WHERE user_id = $1 AND channel_id = $2
+		AND type IN ('mention_user','mention_role','mention_everyone','mention_here','reply')
+		AND is_read = FALSE`,
+		userID, channelID,
+	)
+	if err != nil {
+		return err
+	}
+	s.hub.SendUserEvent(userID, EventTypeNotificationRead, map[string]any{"channelId": channelID})
+	return nil
+}
+
 // MarkAllRead marks every unread notification for a user as read.
 func (s *Service) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
 	_, err := s.db.Exec(ctx,

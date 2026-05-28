@@ -13,6 +13,7 @@ import (
 	"github.com/zentra/server/internal/models"
 	"github.com/zentra/server/internal/services/channeltype"
 	"github.com/zentra/server/internal/services/community"
+	"github.com/zentra/server/internal/services/notification"
 	"github.com/zentra/server/pkg/database"
 )
 
@@ -24,9 +25,10 @@ var (
 )
 
 type Service struct {
-	db               *pgxpool.Pool
-	communityService *community.Service
-	typeRegistry     *channeltype.Registry
+	db                 *pgxpool.Pool
+	communityService   *community.Service
+	typeRegistry       *channeltype.Registry
+	notificationService *notification.Service
 }
 
 func NewService(db *pgxpool.Pool, communityService *community.Service, typeRegistry *channeltype.Registry) *Service {
@@ -35,6 +37,12 @@ func NewService(db *pgxpool.Pool, communityService *community.Service, typeRegis
 		communityService: communityService,
 		typeRegistry:     typeRegistry,
 	}
+}
+
+// SetNotificationService wires the notification service after construction
+// (both services depend on the wsHub which is created after them).
+func (s *Service) SetNotificationService(ns *notification.Service) {
+	s.notificationService = ns
 }
 
 type CreateChannelRequest struct {
@@ -590,7 +598,17 @@ func (s *Service) MarkRead(ctx context.Context, channelID, userID uuid.UUID) err
 		DO UPDATE SET last_read_at = NOW()`,
 		userID, channelID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if s.notificationService != nil {
+		if err := s.notificationService.MarkChannelRead(ctx, channelID, userID); err != nil {
+			log.Warn().Err(err).Msg("Failed to mark channel notifications as read")
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) GetUnreadCount(ctx context.Context, channelID, userID uuid.UUID) (int, error) {

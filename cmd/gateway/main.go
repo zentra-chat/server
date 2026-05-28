@@ -143,6 +143,7 @@ func main() {
 	notificationService := notification.NewService(db, wsHub)
 	messageService.SetNotificationService(notificationService)
 	dmService.SetNotificationService(notificationService)
+	channelService.SetNotificationService(notificationService)
 
 	// Initialize handlers
 	authHandler := auth.NewHandler(authService)
