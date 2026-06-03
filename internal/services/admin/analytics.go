@@ -17,7 +17,7 @@ func (s *Service) GetDashboard(ctx context.Context) (*DashboardStats, error) {
 		return nil, err
 	}
 
-	err = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages`).Scan(&stats.TotalMessages)
+	err = s.db.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM messages) + (SELECT COUNT(*) FROM direct_messages)`).Scan(&stats.TotalMessages)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch total messages")
 		return nil, err
@@ -37,7 +37,7 @@ func (s *Service) GetDashboard(ctx context.Context) (*DashboardStats, error) {
 	}
 
 	stats.MessagesOverTime, err = s.getCountOverTime(ctx,
-		`SELECT DATE(created_at)::text, COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' GROUP BY DATE(created_at) ORDER BY DATE(created_at)`,
+		`SELECT DATE(created_at)::text, COUNT(*) FROM (SELECT created_at FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' UNION ALL SELECT created_at FROM direct_messages WHERE created_at >= NOW() - INTERVAL '30 days') sub GROUP BY DATE(created_at) ORDER BY DATE(created_at)`,
 	)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch messages over time")
@@ -59,7 +59,7 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL`).Scan(&stats.TotalUsers); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch total users")
 	}
-	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages`).Scan(&stats.TotalMessages); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM messages) + (SELECT COUNT(*) FROM direct_messages)`).Scan(&stats.TotalMessages); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch total messages")
 	}
 	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL`).Scan(&stats.TotalCommunities); err != nil {
@@ -73,7 +73,7 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 		log.Warn().Err(err).Msg("Failed to fetch online users")
 	}
 
-	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= CURRENT_DATE`).Scan(&stats.MessagesToday); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM messages WHERE created_at >= CURRENT_DATE) + (SELECT COUNT(*) FROM direct_messages WHERE created_at >= CURRENT_DATE)`).Scan(&stats.MessagesToday); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch messages today")
 	}
 
@@ -81,7 +81,7 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 		log.Warn().Err(err).Msg("Failed to fetch new users today")
 	}
 
-	if err := s.db.QueryRow(ctx, `SELECT COUNT(DISTINCT author_id) FROM messages WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.ActiveUsers7d); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(DISTINCT user_id) FROM (SELECT author_id AS user_id FROM messages WHERE created_at >= NOW() - INTERVAL '7 days' UNION ALL SELECT sender_id AS user_id FROM direct_messages WHERE created_at >= NOW() - INTERVAL '7 days') sub`).Scan(&stats.ActiveUsers7d); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch active users 7d")
 	}
 
@@ -93,11 +93,11 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 		log.Warn().Err(err).Msg("Failed to fetch new users 30d")
 	}
 
-	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.Messages7d); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '7 days') + (SELECT COUNT(*) FROM direct_messages WHERE created_at >= NOW() - INTERVAL '7 days')`).Scan(&stats.Messages7d); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch messages 7d")
 	}
 
-	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days'`).Scan(&stats.Messages30d); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days') + (SELECT COUNT(*) FROM direct_messages WHERE created_at >= NOW() - INTERVAL '30 days')`).Scan(&stats.Messages30d); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch messages 30d")
 	}
 
@@ -113,7 +113,7 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Users); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch prev7 users")
 	}
-	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Messages); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days') + (SELECT COUNT(*) FROM direct_messages WHERE created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days')`).Scan(&prev7Messages); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch prev7 messages")
 	}
 	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM communities WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '14 days' AND created_at < NOW() - INTERVAL '7 days'`).Scan(&prev7Communities); err != nil {
@@ -143,7 +143,7 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 	}
 
 	stats.MessagesOverTime, err = s.getCountOverTime(ctx,
-		`SELECT DATE(created_at)::text, COUNT(*) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' GROUP BY DATE(created_at) ORDER BY DATE(created_at)`,
+		`SELECT DATE(created_at)::text, COUNT(*) FROM (SELECT created_at FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' UNION ALL SELECT created_at FROM direct_messages WHERE created_at >= NOW() - INTERVAL '30 days') sub GROUP BY DATE(created_at) ORDER BY DATE(created_at)`,
 	)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch messages over time")
@@ -157,7 +157,7 @@ func (s *Service) GetAnalytics(ctx context.Context) (*AnalyticsStats, error) {
 	}
 
 	stats.ActiveUsersOverTime, err = s.getCountOverTime(ctx,
-		`SELECT DATE(created_at)::text, COUNT(DISTINCT author_id) FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' GROUP BY DATE(created_at) ORDER BY DATE(created_at)`,
+		`SELECT date, COUNT(DISTINCT user_id) FROM (SELECT DATE(created_at)::text AS date, author_id AS user_id FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' UNION ALL SELECT DATE(created_at)::text AS date, sender_id AS user_id FROM direct_messages WHERE created_at >= NOW() - INTERVAL '30 days') sub GROUP BY date ORDER BY date`,
 	)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch active users over time")
@@ -215,8 +215,7 @@ func (s *Service) getTopCommunities(ctx context.Context) []CommunityStat {
 func (s *Service) getActiveHours(ctx context.Context) []HourlyStat {
 	rows, err := s.db.Query(ctx,
 		`SELECT EXTRACT(HOUR FROM created_at)::int as hour, COUNT(*) as count
-		FROM messages
-		WHERE created_at >= NOW() - INTERVAL '30 days'
+		FROM (SELECT created_at FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' UNION ALL SELECT created_at FROM direct_messages WHERE created_at >= NOW() - INTERVAL '30 days') sub
 		GROUP BY EXTRACT(HOUR FROM created_at)
 		ORDER BY hour`,
 	)
@@ -252,8 +251,7 @@ func (s *Service) getActiveHours(ctx context.Context) []HourlyStat {
 func (s *Service) getActiveWeekdays(ctx context.Context) []DailyStat {
 	rows, err := s.db.Query(ctx,
 		`SELECT EXTRACT(DOW FROM created_at)::int as dow, COUNT(*) as count
-		FROM messages
-		WHERE created_at >= NOW() - INTERVAL '30 days'
+		FROM (SELECT created_at FROM messages WHERE created_at >= NOW() - INTERVAL '30 days' UNION ALL SELECT created_at FROM direct_messages WHERE created_at >= NOW() - INTERVAL '30 days') sub
 		GROUP BY EXTRACT(DOW FROM created_at)
 		ORDER BY dow`,
 	)
