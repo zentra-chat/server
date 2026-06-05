@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -703,13 +704,37 @@ func (s *Service) GetCommunity(ctx context.Context, id uuid.UUID) (*models.Commu
 }
 
 func (s *Service) GetUserCommunities(ctx context.Context, userID uuid.UUID) ([]*models.Community, error) {
+	// Fetch the user's community layout order
+	var layoutRaw json.RawMessage
+	err := s.db.QueryRow(ctx,
+		`SELECT COALESCE(community_layout, '{"communityOrder":[]}'::jsonb) FROM users WHERE id = $1`,
+		userID,
+	).Scan(&layoutRaw)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var layout struct {
+		CommunityOrder []uuid.UUID `json:"communityOrder"`
+	}
+	if err := json.Unmarshal(layoutRaw, &layout); err != nil {
+		log.Warn().Err(err).Msg("Failed to parse community_layout, falling back to name sort")
+	}
+
+	orderIndex := make(map[uuid.UUID]int, len(layout.CommunityOrder))
+	for i, id := range layout.CommunityOrder {
+		orderIndex[id] = i
+	}
+
 	rows, err := s.db.Query(ctx,
 		`SELECT c.id, c.name, c.description, c.icon_url, c.banner_url, c.owner_id, 
 		c.is_public, c.is_open, c.member_count, c.created_at, c.updated_at
 		FROM communities c
 		JOIN community_members cm ON cm.community_id = c.id
-		WHERE cm.user_id = $1 AND c.deleted_at IS NULL
-		ORDER BY c.name`,
+		WHERE cm.user_id = $1 AND c.deleted_at IS NULL`,
 		userID,
 	)
 	if err != nil {
@@ -717,7 +742,8 @@ func (s *Service) GetUserCommunities(ctx context.Context, userID uuid.UUID) ([]*
 	}
 	defer rows.Close()
 
-	var communities []*models.Community
+	communities := make([]*models.Community, 0, len(layout.CommunityOrder))
+	unordered := make([]*models.Community, 0)
 	for rows.Next() {
 		c := &models.Community{}
 		err := rows.Scan(
@@ -727,13 +753,27 @@ func (s *Service) GetUserCommunities(ctx context.Context, userID uuid.UUID) ([]*
 		if err != nil {
 			return nil, err
 		}
-		communities = append(communities, c)
+		if _, ok := orderIndex[c.ID]; ok {
+			communities = append(communities, c)
+		} else {
+			unordered = append(unordered, c)
+		}
 	}
 
 	if err := rows.Err(); err != nil {
 		log.Warn().Err(err).Msg("Failed to iterate user communities rows")
 		return nil, err
 	}
+
+	// Sort by layout order, append any new communities at the end alphabetically
+	sort.Slice(communities, func(i, j int) bool {
+		return orderIndex[communities[i].ID] < orderIndex[communities[j].ID]
+	})
+	sort.Slice(unordered, func(i, j int) bool {
+		return unordered[i].Name < unordered[j].Name
+	})
+
+	communities = append(communities, unordered...)
 
 	return communities, nil
 }
@@ -1143,7 +1183,7 @@ func (s *Service) addMember(ctx context.Context, communityID, userID uuid.UUID) 
 
 	memberID := uuid.New()
 	return database.WithTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		_, err = tx.Exec(ctx,
+		_, err := tx.Exec(ctx,
 			`INSERT INTO community_members (id, community_id, user_id, joined_at)
 			VALUES ($1, $2, $3, NOW())`,
 			memberID, communityID, userID,
@@ -2000,6 +2040,19 @@ func (s *Service) GetMemberPermissionsForMember(ctx context.Context, communityID
 	}
 
 	return userPermissions, nil
+}
+
+func (s *Service) ReorderCommunities(ctx context.Context, userID uuid.UUID, communityIDs []uuid.UUID) error {
+	layout, err := json.Marshal(map[string][]uuid.UUID{"communityOrder": communityIDs})
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(ctx,
+		`UPDATE users SET community_layout = $1 WHERE id = $2`,
+		layout, userID,
+	)
+	return err
 }
 
 func (s *Service) IsMember(ctx context.Context, communityID, userID uuid.UUID) bool {

@@ -38,6 +38,7 @@ func (h *Handler) Routes(secret string) chi.Router {
 
 		r.Post("/", h.CreateCommunity)
 		r.Get("/", h.GetUserCommunities)
+		r.Put("/reorder", h.ReorderCommunities)
 		r.Post("/join/{code}", h.JoinWithInvite)
 
 		r.Route("/{id}", func(r chi.Router) {
@@ -379,6 +380,29 @@ func (h *Handler) JoinWithInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.RespondSuccess(w, community)
+}
+
+func (h *Handler) ReorderCommunities(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.RequireAuth(r.Context())
+	if err != nil {
+		utils.RespondError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req struct {
+		CommunityIDs []uuid.UUID `json:"communityIds" validate:"required"`
+	}
+	if err := utils.DecodeJSON(r, &req); err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := h.service.ReorderCommunities(r.Context(), userID, req.CommunityIDs); err != nil {
+		utils.RespondError(w, http.StatusInternalServerError, "Failed to reorder communities")
+		return
+	}
+
+	utils.RespondNoContent(w)
 }
 
 func (h *Handler) GetInviteInfo(w http.ResponseWriter, r *http.Request) {

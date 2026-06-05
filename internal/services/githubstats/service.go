@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -23,7 +25,6 @@ var trackedRepos = []string{
 	"zentra-chat/plugin-template",
 	"zentra-chat/plugin-sdk",
 	"zentra-chat/plugin-marketplace",
-	"zentra-chat/default-plugin",
 	"zentra-chat/docs",
 }
 
@@ -85,6 +86,7 @@ func (s *Service) GetStats(ctx context.Context) (*Stats, error) {
 
 	fresh, err := s.fetchStats(ctx)
 	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch GitHub stats, falling back to cache")
 		if s.cache != nil {
 			copy := *s.cache
 			return &copy, nil
@@ -117,6 +119,7 @@ func (s *Service) fetchStats(ctx context.Context) (*Stats, error) {
 	for _, repo := range trackedRepos {
 		summary, err := s.fetchRepoSummary(ctx, repo)
 		if err != nil {
+			log.Warn().Err(err).Str("repo", repo).Msg("Failed to fetch GitHub repo summary")
 			return nil, err
 		}
 		totalStars += summary.StargazersCount
@@ -124,6 +127,7 @@ func (s *Service) fetchStats(ctx context.Context) (*Stats, error) {
 
 		repoContributors, err := s.fetchRepoContributors(ctx, repo)
 		if err != nil {
+			log.Warn().Err(err).Str("repo", repo).Msg("Failed to fetch GitHub repo contributors")
 			return nil, err
 		}
 
@@ -187,7 +191,9 @@ func (s *Service) fetchRepoSummary(ctx context.Context, repo string) (*repoSumma
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("github summary request failed for %s: %s", repo, resp.Status)
+		err := fmt.Errorf("github summary request failed for %s: %s", repo, resp.Status)
+		log.Warn().Err(err).Str("repo", repo).Int("status", resp.StatusCode).Msg("GitHub API returned non-2xx for repo summary")
+		return nil, err
 	}
 
 	var summary repoSummary
@@ -217,7 +223,9 @@ func (s *Service) fetchRepoContributors(ctx context.Context, repo string) ([]rep
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			resp.Body.Close()
-			return nil, fmt.Errorf("github contributors request failed for %s: %s", repo, resp.Status)
+			err := fmt.Errorf("github contributors request failed for %s: %s", repo, resp.Status)
+			log.Warn().Err(err).Str("repo", repo).Int("status", resp.StatusCode).Int("page", page).Msg("GitHub API returned non-2xx for repo contributors")
+			return nil, err
 		}
 
 		var pageContributors []repoContributor

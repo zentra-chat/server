@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog/log"
 	"github.com/zentra/server/internal/utils"
 )
 
@@ -24,6 +25,7 @@ func (h *Handler) Routes() chi.Router {
 func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.service.GetStats(r.Context())
 	if err != nil {
+		log.Error().Err(err).Msg("Failed to fetch GitHub stats")
 		utils.RespondError(w, http.StatusBadGateway, "Failed to fetch GitHub stats")
 		return
 	}
