@@ -32,6 +32,12 @@ func (h *Handler) Routes() chi.Router {
 	r.Delete("/users/{userId}", h.DeleteUser)
 	r.Post("/users/{userId}/restore", h.RestoreUser)
 
+	r.Route("/server", func(r chi.Router) {
+		r.Get("/info", h.GetServerInfo)
+		r.Get("/config", h.GetServerConfig)
+		r.Patch("/config", h.UpdateServerConfig)
+	})
+
 	return r
 }
 
@@ -268,4 +274,35 @@ func (h *Handler) RestoreUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.RespondJSON(w, http.StatusOK, map[string]string{"message": "User restored successfully"})
+}
+
+func (h *Handler) GetServerInfo(w http.ResponseWriter, r *http.Request) {
+	info := h.service.GetServerInfo(r.Context())
+	utils.RespondSuccess(w, info)
+}
+
+func (h *Handler) GetServerConfig(w http.ResponseWriter, r *http.Request) {
+	cfg, err := h.service.GetServerConfig(r.Context())
+	if err != nil {
+		utils.RespondError(w, http.StatusInternalServerError, "Failed to fetch server config")
+		return
+	}
+
+	utils.RespondSuccess(w, cfg)
+}
+
+func (h *Handler) UpdateServerConfig(w http.ResponseWriter, r *http.Request) {
+	var req UpdateServerConfigRequest
+	if err := utils.DecodeJSON(r, &req); err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	cfg, err := h.service.UpdateServerConfig(r.Context(), &req)
+	if err != nil {
+		utils.RespondError(w, http.StatusInternalServerError, "Failed to update server config")
+		return
+	}
+
+	utils.RespondSuccess(w, cfg)
 }

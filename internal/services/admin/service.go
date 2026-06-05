@@ -5,7 +5,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+	"github.com/zentra/server/config"
 )
+
+var Version = "dev"
 
 var (
 	ErrNotAdmin          = errors.New("user is not an admin")
@@ -21,12 +25,18 @@ var (
 )
 
 type Service struct {
-	db *pgxpool.Pool
+	db      *pgxpool.Pool
+	rdb     *redis.Client
+	cfg     *config.Config
+	startAt time.Time
 }
 
-func NewService(db *pgxpool.Pool) *Service {
+func NewService(db *pgxpool.Pool, rdb *redis.Client, cfg *config.Config) *Service {
 	return &Service{
-		db: db,
+		db:      db,
+		rdb:     rdb,
+		cfg:     cfg,
+		startAt: time.Now(),
 	}
 }
 

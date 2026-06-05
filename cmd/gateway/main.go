@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"os"
 	"os/signal"
@@ -130,7 +131,7 @@ func main() {
 	pluginService := plugin.NewService(db, channelTypeRegistry, redisClient, encKey)
 
 	// Initialize admin service
-	adminService := admin.NewService(db)
+	adminService := admin.NewService(db, redisClient, cfg)
 	if err := adminService.EnsureFirstUserIsAdmin(context.Background()); err != nil {
 		log.Warn().Err(err).Msg("Failed to ensure first user is admin")
 	}
@@ -190,26 +191,57 @@ func main() {
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		maintenanceMode := false
+		maintenanceMsg := ""
+
+		data, err := redisClient.Get(r.Context(), "zentra:maintenance").Bytes()
+		if err == nil {
+			var m struct {
+				Enabled bool   `json:"enabled"`
+				Message string `json:"message"`
+			}
+			if json.Unmarshal(data, &m) == nil {
+				maintenanceMode = m.Enabled
+				maintenanceMsg = m.Message
+			}
+		}
+
+		status := "ok"
+		if maintenanceMode {
+			status = "maintenance"
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok","timestamp":"` + time.Now().Format(time.RFC3339) + `"}`))
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":            status,
+			"maintenance":       maintenanceMode,
+			"maintenanceMessage": maintenanceMsg,
+			"timestamp":         time.Now().Format(time.RFC3339),
+		})
 	})
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(chimiddleware.Timeout(60 * time.Second))
 
-		// Public routes
+		// Auth routes - always accessible (admins need to log in during maintenance)
 		r.Mount("/auth", authHandler.Routes())
-		r.Mount("/communities", communityHandler.Routes(cfg.JWT.Secret))
-		r.Mount("/public/github", githubStatsHandler.Routes())
-		r.Mount("/webhooks", webhookHandler.Routes(cfg.JWT.Secret))
 
-		// Protected routes
+		// Public routes - maintenance blocks everyone (no auth context to verify admin)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.MaintenanceMiddleware(redisClient, db))
+			r.Mount("/communities", communityHandler.Routes(cfg.JWT.Secret))
+			r.Mount("/public/github", githubStatsHandler.Routes())
+			r.Mount("/webhooks", webhookHandler.Routes(cfg.JWT.Secret))
+		})
+
+		// Authenticated routes - auth runs first so maintenance can check admin status
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.AuthMiddleware(cfg.JWT.Secret))
-
-			// Rate limiting for authenticated users
 			r.Use(middleware.RateLimitMiddleware(redisClient, cfg.Server.RateLimitRPS))
+
+			// Maintenance check after auth, so we know who the user is
+			r.Use(middleware.MaintenanceMiddleware(redisClient, db))
 
 			r.Mount("/users", userHandler.Routes())
 			r.Mount("/channels", channelHandler.Routes())
@@ -222,7 +254,7 @@ func main() {
 			r.Mount("/voice", voiceHandler.Routes())
 			r.Mount("/plugins", pluginHandler.Routes())
 
-			// Admin routes (require admin privileges)
+			// Admin routes (require admin privileges, bypass maintenance)
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.AdminMiddleware(db))
 				r.Mount("/admin", adminHandler.Routes())
