@@ -17,14 +17,11 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /gateway cmd/gateway/main.go
 
 # Runtime stage
-FROM alpine:3.19
+FROM alpine:3.21
 
 WORKDIR /app
 
 # Install runtime dependencies
-# docker-cli and git are needed for the admin update panel (UPDATE_METHOD=docker)
-# to pull latest code and rebuild via Docker socket.
-# nodejs and npm are needed to build the frontend from the admin panel.
 RUN apk add --no-cache ca-certificates tzdata docker-cli docker-compose git
 
 # Install nodejs and npm for frontend builds via the admin panel
