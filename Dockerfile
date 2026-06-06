@@ -36,8 +36,11 @@ COPY --from=builder /gateway /usr/local/bin/gateway
 # Copy migrations for reference
 COPY --from=builder /app/migrations ./migrations
 
-# Create non-root user
-RUN adduser -D -g '' appuser
+# Create non-root user and add to docker group (for admin update panel)
+ARG DOCKER_GID=999
+RUN addgroup -g ${DOCKER_GID} docker && \
+    adduser -D -g '' appuser && \
+    adduser appuser docker
 USER appuser
 
 # Expose port
