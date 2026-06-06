@@ -414,6 +414,18 @@ func (s *Service) runDockerUpdate(task *updateTask) {
 		task.appendOutput("Running `docker compose down`...")
 		task.runCmdLive(projectRoot, "docker", "compose", "down")
 
+		task.setMessage("Freeing ports from orphaned containers...")
+		task.appendOutput("Checking for orphaned containers on required ports...")
+		apiPort := os.Getenv("API_PORT")
+		if apiPort == "" {
+			apiPort = "63566"
+		}
+		freePorts := fmt.Sprintf(
+			`for port in 5432 6379 9000 9001 %s; do cid=$(docker ps -q --filter "publish=$port"); [ -n "$cid" ] && docker rm -f "$cid"; done`,
+			apiPort,
+		)
+		task.runCmdLive(projectRoot, "sh", "-c", freePorts)
+
 		task.setMessage("Rebuilding and restarting backend...")
 		task.appendOutput("Running `docker compose up -d --build api`...")
 		if !task.runCmdLive(projectRoot, "docker", "compose", "up", "-d", "--build", "api") {
