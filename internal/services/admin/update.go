@@ -360,6 +360,11 @@ func (s *Service) runDockerUpdate(task *updateTask) {
 		return
 	}
 
+	if err := exec.Command("docker", "compose", "version").Run(); err != nil {
+		s.failTask(task, "Docker Compose not found. Install docker-compose in the container and try again.")
+		return
+	}
+
 	task.setMessage("Pulling latest code...")
 	task.appendOutput("--- Update started ---")
 
@@ -496,10 +501,12 @@ func (s *Service) migrateDatabase(task *updateTask, projectRoot string) error {
 	task.setMessage("Running database migrations...")
 
 	if _, err := exec.LookPath("docker"); err == nil {
-		if task.runCmdLive(projectRoot, "docker", "compose", "run", "--rm", "migrate", "up") {
-			return nil
+		if exec.Command("docker", "compose", "version").Run() == nil {
+			if task.runCmdLive(projectRoot, "docker", "compose", "run", "--rm", "migrate", "up") {
+				return nil
+			}
+			task.appendOutput("docker compose migration failed, trying migrate CLI...")
 		}
-		task.appendOutput("docker compose migration failed, trying migrate CLI...")
 	}
 
 	if _, err := exec.LookPath("migrate"); err == nil {
