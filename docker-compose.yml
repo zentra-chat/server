@@ -115,6 +115,10 @@ services:
       - .env
     ports:
       - "${API_PORT:-63566}:8080"
+    volumes:
+      - .:/app
+      - ../frontend:/frontend
+      - /var/run/docker.sock:/var/run/docker.sock
 
   migrate:
     image: migrate/migrate:v4.18.3

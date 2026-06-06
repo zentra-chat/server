@@ -2,6 +2,8 @@ package admin
 
 import (
 	"errors"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,14 +31,38 @@ type Service struct {
 	rdb     *redis.Client
 	cfg     *config.Config
 	startAt time.Time
+
+	backendDir   string
+	frontendDir  string
+	updateMethod string
+	updateCommand string
+	updateMu     sync.Mutex
+	updateTasks  map[string]*updateTask
 }
 
 func NewService(db *pgxpool.Pool, rdb *redis.Client, cfg *config.Config) *Service {
+	backendDir := os.Getenv("BACKEND_DIR")
+	if backendDir == "" {
+		backendDir = "."
+	}
+
+	frontendDir := os.Getenv("FRONTEND_DIR")
+
+	updateMethod := os.Getenv("UPDATE_METHOD")
+	if updateMethod == "" {
+		updateMethod = "docker"
+	}
+
 	return &Service{
-		db:      db,
-		rdb:     rdb,
-		cfg:     cfg,
-		startAt: time.Now(),
+		db:            db,
+		rdb:           rdb,
+		cfg:           cfg,
+		startAt:       time.Now(),
+		backendDir:    backendDir,
+		frontendDir:   frontendDir,
+		updateMethod:  updateMethod,
+		updateCommand: os.Getenv("UPDATE_COMMAND"),
+		updateTasks:   make(map[string]*updateTask),
 	}
 }
 

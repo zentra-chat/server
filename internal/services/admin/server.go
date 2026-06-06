@@ -12,16 +12,17 @@ import (
 )
 
 type ServerInfo struct {
-	Version    string        `json:"version"`
-	GoVersion  string        `json:"goVersion"`
-	OS         string        `json:"os"`
-	Arch       string        `json:"arch"`
-	CPUCount   int           `json:"cpuCount"`
-	GoRoutines int           `json:"goRoutines"`
-	Uptime     int64         `json:"uptime"`
-	StartTime  time.Time     `json:"startTime"`
-	Database   ServiceStatus `json:"database"`
-	Redis      ServiceStatus `json:"redis"`
+	Version      string        `json:"version"`
+	GoVersion    string        `json:"goVersion"`
+	OS           string        `json:"os"`
+	Arch         string        `json:"arch"`
+	CPUCount     int           `json:"cpuCount"`
+	GoRoutines   int           `json:"goRoutines"`
+	Uptime       int64         `json:"uptime"`
+	StartTime    time.Time     `json:"startTime"`
+	Database     ServiceStatus `json:"database"`
+	Redis        ServiceStatus `json:"redis"`
+	UpdateMethod string        `json:"updateMethod"`
 }
 
 type ServiceStatus struct {
@@ -60,6 +61,7 @@ func (s *Service) GetServerInfo(ctx context.Context) *ServerInfo {
 		StartTime:  s.startAt,
 	}
 
+	info.UpdateMethod = s.effectiveUpdateMethod()
 	info.Database = s.checkDatabase(ctx)
 	info.Redis = s.checkRedis(ctx)
 
@@ -139,6 +141,13 @@ func (s *Service) setMaintenanceMode(ctx context.Context, m *maintenanceData) er
 	}
 
 	return s.rdb.Set(ctx, "zentra:maintenance", data, 0).Err()
+}
+
+func (s *Service) effectiveUpdateMethod() string {
+	if s.updateMethod != "" {
+		return s.updateMethod
+	}
+	return "not configured"
 }
 
 func (s *Service) checkDatabase(ctx context.Context) ServiceStatus {

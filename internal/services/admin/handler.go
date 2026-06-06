@@ -36,6 +36,8 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/info", h.GetServerInfo)
 		r.Get("/config", h.GetServerConfig)
 		r.Patch("/config", h.UpdateServerConfig)
+		r.Post("/update", h.TriggerUpdate)
+		r.Get("/update/status", h.GetUpdateStatus)
 	})
 
 	return r
@@ -305,4 +307,42 @@ func (h *Handler) UpdateServerConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.RespondSuccess(w, cfg)
+}
+
+func (h *Handler) TriggerUpdate(w http.ResponseWriter, r *http.Request) {
+	var req UpdateRequest
+	if err := utils.DecodeJSON(r, &req); err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	status, err := h.service.StartUpdate(req.Target)
+	if err != nil {
+		switch err.Error() {
+		case "an update is already in progress":
+			utils.RespondErrorWithCode(w, http.StatusConflict, "UPDATE_IN_PROGRESS", err.Error())
+		default:
+			utils.RespondError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	utils.RespondSuccess(w, status)
+}
+
+func (h *Handler) GetUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	id := utils.GetQueryString(r, "id", "")
+
+	if id != "" {
+		status := h.service.GetUpdateStatus(id)
+		if status == nil {
+			utils.RespondError(w, http.StatusNotFound, "Update task not found")
+			return
+		}
+		utils.RespondSuccess(w, status)
+		return
+	}
+
+	statuses := h.service.ListUpdateStatuses()
+	utils.RespondSuccess(w, statuses)
 }

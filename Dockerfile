@@ -22,7 +22,13 @@ FROM alpine:3.19
 WORKDIR /app
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+# docker-cli and git are needed for the admin update panel (UPDATE_METHOD=docker)
+# to pull latest code and rebuild via Docker socket.
+# nodejs and npm are needed to build the frontend from the admin panel.
+RUN apk add --no-cache ca-certificates tzdata docker-cli git
+
+# Install nodejs and npm for frontend builds via the admin panel
+# RUN apk add --no-cache nodejs npm
 
 # Copy the binary from builder
 COPY --from=builder /gateway .
