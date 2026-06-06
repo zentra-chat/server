@@ -90,6 +90,11 @@ func (t *updateTask) runCmd(dir, name string, args ...string) bool {
 	return true
 }
 
+func (s *Service) composeArgs(args ...string) []string {
+	composeArgs := []string{"compose", "-p", s.composeProjectName}
+	return append(composeArgs, args...)
+}
+
 func (t *updateTask) runCmdLive(dir, name string, args ...string) bool {
 	t.mu.Lock()
 	if t.outputBuf.Len() > 0 {
@@ -360,7 +365,7 @@ func (s *Service) runDockerUpdate(task *updateTask) {
 		return
 	}
 
-	if err := exec.Command("docker", "compose", "version").Run(); err != nil {
+	if err := exec.Command("docker", s.composeArgs("version")...).Run(); err != nil {
 		s.failTask(task, "Docker Compose not found. Install docker-compose in the container and try again.")
 		return
 	}
@@ -401,7 +406,7 @@ func (s *Service) runDockerUpdate(task *updateTask) {
 
 		task.setMessage("Running database migrations...")
 		task.appendOutput("Running `docker compose run --rm migrate up`...")
-		if !task.runCmdLive(projectRoot, "docker", "compose", "run", "--rm", "migrate", "up") {
+		if !task.runCmdLive(projectRoot, "docker", s.composeArgs("run", "--rm", "migrate", "up")...) {
 			log.Warn().Str("task_id", task.Status.ID).Msg("Migration failed, continuing with update")
 			task.appendOutput("Warning: Migration failed. The database may be out of sync.")
 		}
@@ -423,7 +428,7 @@ func (s *Service) runDockerUpdate(task *updateTask) {
 
 		task.setMessage("Rebuilding and restarting backend...")
 		task.appendOutput("Running `docker compose up -d --build --no-deps api`...")
-		if !task.runCmdLive(projectRoot, "docker", "compose", "up", "-d", "--build", "--no-deps", "api") {
+		if !task.runCmdLive(projectRoot, "docker", s.composeArgs("up", "-d", "--build", "--no-deps", "api")...) {
 			s.failTask(task, "Backend rebuild and restart failed. Check the docker compose output above.")
 			return
 		}
@@ -512,8 +517,8 @@ func (s *Service) migrateDatabase(task *updateTask, projectRoot string) error {
 	task.setMessage("Running database migrations...")
 
 	if _, err := exec.LookPath("docker"); err == nil {
-		if exec.Command("docker", "compose", "version").Run() == nil {
-			if task.runCmdLive(projectRoot, "docker", "compose", "run", "--rm", "migrate", "up") {
+		if exec.Command("docker", s.composeArgs("version")...).Run() == nil {
+			if task.runCmdLive(projectRoot, "docker", s.composeArgs("run", "--rm", "migrate", "up")...) {
 				return nil
 			}
 			task.appendOutput("docker compose migration failed, trying migrate CLI...")

@@ -32,12 +32,13 @@ type Service struct {
 	cfg     *config.Config
 	startAt time.Time
 
-	backendDir   string
-	frontendDir  string
-	updateMethod string
-	updateCommand string
-	updateMu     sync.Mutex
-	updateTasks  map[string]*updateTask
+	backendDir        string
+	frontendDir       string
+	updateMethod      string
+	updateCommand     string
+	composeProjectName string
+	updateMu          sync.Mutex
+	updateTasks       map[string]*updateTask
 }
 
 func NewService(db *pgxpool.Pool, rdb *redis.Client, cfg *config.Config) *Service {
@@ -53,16 +54,22 @@ func NewService(db *pgxpool.Pool, rdb *redis.Client, cfg *config.Config) *Servic
 		updateMethod = "docker"
 	}
 
+	composeProjectName := os.Getenv("COMPOSE_PROJECT_NAME")
+	if composeProjectName == "" {
+		composeProjectName = "live-api"
+	}
+
 	return &Service{
-		db:            db,
-		rdb:           rdb,
-		cfg:           cfg,
-		startAt:       time.Now(),
-		backendDir:    backendDir,
-		frontendDir:   frontendDir,
-		updateMethod:  updateMethod,
-		updateCommand: os.Getenv("UPDATE_COMMAND"),
-		updateTasks:   make(map[string]*updateTask),
+		db:                db,
+		rdb:               rdb,
+		cfg:               cfg,
+		startAt:           time.Now(),
+		backendDir:        backendDir,
+		frontendDir:       frontendDir,
+		updateMethod:      updateMethod,
+		updateCommand:     os.Getenv("UPDATE_COMMAND"),
+		composeProjectName: composeProjectName,
+		updateTasks:       make(map[string]*updateTask),
 	}
 }
 
