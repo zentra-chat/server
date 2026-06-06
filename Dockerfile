@@ -24,8 +24,8 @@ WORKDIR /app
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates tzdata docker-cli docker-compose git bash
 
-# Install nodejs and npm for frontend builds via the admin panel
-# RUN apk add --no-cache nodejs npm
+# Install nodejs, npm, and pnpm for frontend builds via the admin panel
+RUN apk add --no-cache nodejs npm pnpm
 
 # Copy the binary from builder
 COPY --from=builder /gateway /usr/local/bin/gateway
