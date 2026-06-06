@@ -31,7 +31,7 @@ RUN apk add --no-cache ca-certificates tzdata docker-cli git
 # RUN apk add --no-cache nodejs npm
 
 # Copy the binary from builder
-COPY --from=builder /gateway .
+COPY --from=builder /gateway /usr/local/bin/gateway
 
 # Copy migrations for reference
 COPY --from=builder /app/migrations ./migrations
@@ -48,4 +48,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 # Run the application
-CMD ["./gateway"]
+CMD ["/usr/local/bin/gateway"]
