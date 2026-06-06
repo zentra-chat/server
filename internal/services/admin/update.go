@@ -410,25 +410,20 @@ func (s *Service) runDockerUpdate(task *updateTask) {
 	}
 
 	if target == string(UpdateTargetBackend) || target == string(UpdateTargetAll) {
-		task.setMessage("Shutting down old containers...")
-		task.appendOutput("Running `docker compose down`...")
-		task.runCmdLive(projectRoot, "docker", "compose", "down")
-
-		task.setMessage("Freeing ports from orphaned containers...")
-		task.appendOutput("Checking for orphaned containers on required ports...")
+		task.setMessage("Freeing api port from orphaned containers...")
 		apiPort := os.Getenv("API_PORT")
 		if apiPort == "" {
 			apiPort = "63566"
 		}
-		freePorts := fmt.Sprintf(
-			`for port in 5432 6379 9000 9001 %s; do cid=$(docker ps -q --filter "publish=$port"); [ -n "$cid" ] && docker rm -f "$cid"; done`,
+		freeCmd := fmt.Sprintf(
+			`cid=$(docker ps -q --filter "publish=%s"); [ -n "$cid" ] && docker rm -f "$cid"`,
 			apiPort,
 		)
-		task.runCmdLive(projectRoot, "sh", "-c", freePorts)
+		task.runCmdLive(projectRoot, "sh", "-c", freeCmd)
 
 		task.setMessage("Rebuilding and restarting backend...")
-		task.appendOutput("Running `docker compose up -d --build api`...")
-		if !task.runCmdLive(projectRoot, "docker", "compose", "up", "-d", "--build", "api") {
+		task.appendOutput("Running `docker compose up -d --build --no-deps api`...")
+		if !task.runCmdLive(projectRoot, "docker", "compose", "up", "-d", "--build", "--no-deps", "api") {
 			s.failTask(task, "Backend rebuild and restart failed. Check the docker compose output above.")
 			return
 		}
