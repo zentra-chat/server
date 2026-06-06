@@ -411,8 +411,8 @@ func (s *Service) runDockerUpdate(task *updateTask) {
 
 	if target == string(UpdateTargetBackend) || target == string(UpdateTargetAll) {
 		task.setMessage("Rebuilding and restarting backend...")
-		task.appendOutput("Running `docker compose up -d --build api`...")
-		if !task.runCmdLive(projectRoot, "docker", "compose", "up", "-d", "--build", "api") {
+		task.appendOutput("Running `docker compose up -d --build --no-deps api`...")
+		if !task.runCmdLive(projectRoot, "docker", "compose", "up", "-d", "--build", "no-deps", "api") {
 			s.failTask(task, "Backend rebuild and restart failed. Check the docker compose output above.")
 			return
 		}
