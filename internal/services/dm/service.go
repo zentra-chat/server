@@ -314,7 +314,7 @@ func (s *Service) GetMessages(ctx context.Context, conversationID, userID uuid.U
 	if params.Before != nil {
 		query = `
 			SELECT m.id, m.conversation_id, m.sender_id, m.encrypted_content, m.nonce, m.reply_to_id, m.is_edited, m.reactions, m.link_previews, m.created_at, m.updated_at,
-			       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+			       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 			FROM direct_messages m
 			JOIN users u ON u.id = m.sender_id
 			WHERE m.conversation_id = $1 AND m.deleted_at IS NULL
@@ -325,7 +325,7 @@ func (s *Service) GetMessages(ctx context.Context, conversationID, userID uuid.U
 	} else if params.After != nil {
 		query = `
 			SELECT m.id, m.conversation_id, m.sender_id, m.encrypted_content, m.nonce, m.reply_to_id, m.is_edited, m.reactions, m.link_previews, m.created_at, m.updated_at,
-			       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+			       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 			FROM direct_messages m
 			JOIN users u ON u.id = m.sender_id
 			WHERE m.conversation_id = $1 AND m.deleted_at IS NULL
@@ -336,7 +336,7 @@ func (s *Service) GetMessages(ctx context.Context, conversationID, userID uuid.U
 	} else {
 		query = `
 			SELECT m.id, m.conversation_id, m.sender_id, m.encrypted_content, m.nonce, m.reply_to_id, m.is_edited, m.reactions, m.link_previews, m.created_at, m.updated_at,
-			       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+			       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 			FROM direct_messages m
 			JOIN users u ON u.id = m.sender_id
 			WHERE m.conversation_id = $1 AND m.deleted_at IS NULL
@@ -367,7 +367,7 @@ func (s *Service) GetMessages(ctx context.Context, conversationID, userID uuid.U
 		if err := rows.Scan(
 			&msg.ID, &msg.ConversationID, &msg.SenderID, &msg.EncryptedContent, &nonce,
 			&msg.ReplyToID, &msg.IsEdited, &msg.Reactions, &linkPreviewRaw, &msg.CreatedAt, &msg.UpdatedAt,
-			&sender.ID, &sender.Username, &sender.DisplayName, &sender.AvatarURL, &sender.Bio, &sender.Status, &sender.CustomStatus, &sender.CreatedAt,
+			&sender.ID, &sender.Username, &sender.DisplayName, &sender.AvatarURL, &sender.BannerURL, &sender.Bio, &sender.Status, &sender.CustomStatus, &sender.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -544,14 +544,14 @@ func (s *Service) GetMessage(ctx context.Context, messageID, userID uuid.UUID) (
 
 	err := s.db.QueryRow(ctx,
 		`SELECT m.id, m.conversation_id, m.sender_id, m.encrypted_content, m.nonce, m.reply_to_id, m.is_edited, m.reactions, m.link_previews, m.created_at, m.updated_at,
-		        u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		        u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		 FROM direct_messages m
 		 JOIN users u ON u.id = m.sender_id
 		 WHERE m.id = $1 AND m.deleted_at IS NULL`,
 		messageID,
 	).Scan(
 		&msg.ID, &msg.ConversationID, &msg.SenderID, &msg.EncryptedContent, &nonce, &msg.ReplyToID, &msg.IsEdited, &msg.Reactions, &linkPreviewRaw, &msg.CreatedAt, &msg.UpdatedAt,
-		&sender.ID, &sender.Username, &sender.DisplayName, &sender.AvatarURL, &sender.Bio, &sender.Status, &sender.CustomStatus, &sender.CreatedAt,
+		&sender.ID, &sender.Username, &sender.DisplayName, &sender.AvatarURL, &sender.BannerURL, &sender.Bio, &sender.Status, &sender.CustomStatus, &sender.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -811,7 +811,7 @@ func (s *Service) buildConversationResponse(ctx context.Context, convo models.DM
 
 func (s *Service) getParticipants(ctx context.Context, conversationID uuid.UUID) ([]models.PublicUser, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		`SELECT u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		 FROM dm_participants p
 		 JOIN users u ON u.id = p.user_id
 		 WHERE p.conversation_id = $1 AND u.deleted_at IS NULL`,
@@ -825,7 +825,7 @@ func (s *Service) getParticipants(ctx context.Context, conversationID uuid.UUID)
 	var participants []models.PublicUser
 	for rows.Next() {
 		var user models.PublicUser
-		if err := rows.Scan(&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt); err != nil {
+		if err := rows.Scan(&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.BannerURL, &user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt); err != nil {
 			return nil, err
 		}
 		participants = append(participants, user)
@@ -965,7 +965,7 @@ func (s *Service) buildReactions(reactions map[string][]uuid.UUID, userID uuid.U
 func (s *Service) getReplyPreview(ctx context.Context, messageID uuid.UUID) (*DMReplyPreview, error) {
 	query := `
 		SELECT m.id, m.conversation_id, m.sender_id, m.encrypted_content, m.nonce,
-		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM direct_messages m
 		JOIN users u ON u.id = m.sender_id
 		WHERE m.id = $1 AND m.deleted_at IS NULL`
@@ -978,7 +978,7 @@ func (s *Service) getReplyPreview(ctx context.Context, messageID uuid.UUID) (*DM
 
 	err := s.db.QueryRow(ctx, query, messageID).Scan(
 		&preview.ID, &convID, &preview.SenderID, &encContent, &nonce,
-		&sender.ID, &sender.Username, &sender.DisplayName, &sender.AvatarURL, &sender.Bio, &sender.Status, &sender.CustomStatus, &sender.CreatedAt,
+		&sender.ID, &sender.Username, &sender.DisplayName, &sender.AvatarURL, &sender.BannerURL, &sender.Bio, &sender.Status, &sender.CustomStatus, &sender.CreatedAt,
 	)
 	if err != nil {
 		return nil, err

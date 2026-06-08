@@ -282,7 +282,7 @@ func (s *Service) GetMessage(ctx context.Context, messageID, userID uuid.UUID) (
 	query := `
 		SELECT m.id, m.channel_id, m.author_id, m.encrypted_content, m.reply_to_id,
 		       m.link_previews, m.is_pinned, m.is_edited, m.reactions, m.created_at, m.updated_at,
-		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.id = $1 AND m.deleted_at IS NULL`
@@ -295,7 +295,7 @@ func (s *Service) GetMessage(ctx context.Context, messageID, userID uuid.UUID) (
 	err = s.db.QueryRow(ctx, query, messageID).Scan(
 		&msg.ID, &msg.ChannelID, &msg.AuthorID, &encContent,
 		&msg.ReplyToID, &linkPreviewRaw, &msg.IsPinned, &msg.IsEdited, &msg.Reactions, &msg.CreatedAt, &msg.UpdatedAt,
-		&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
+		&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.BannerURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -375,7 +375,7 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 		query = `
 			SELECT m.id, m.channel_id, m.author_id, m.encrypted_content, m.reply_to_id,
 			       m.link_previews, m.is_pinned, m.is_edited, m.reactions, m.created_at, m.updated_at,
-			       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+			       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 			FROM messages m
 			JOIN users u ON u.id = m.author_id
 			WHERE m.channel_id = $1 AND m.deleted_at IS NULL
@@ -387,7 +387,7 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 		query = `
 			SELECT m.id, m.channel_id, m.author_id, m.encrypted_content, m.reply_to_id,
 			       m.link_previews, m.is_pinned, m.is_edited, m.reactions, m.created_at, m.updated_at,
-			       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+			       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 			FROM messages m
 			JOIN users u ON u.id = m.author_id
 			WHERE m.channel_id = $1 AND m.deleted_at IS NULL
@@ -399,7 +399,7 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 		query = `
 			SELECT m.id, m.channel_id, m.author_id, m.encrypted_content, m.reply_to_id,
 			       m.link_previews, m.is_pinned, m.is_edited, m.reactions, m.created_at, m.updated_at,
-			       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+			       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 			FROM messages m
 			JOIN users u ON u.id = m.author_id
 			WHERE m.channel_id = $1 AND m.deleted_at IS NULL
@@ -431,7 +431,7 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 		err := rows.Scan(
 			&msg.ID, &msg.ChannelID, &msg.AuthorID, &encContent,
 			&msg.ReplyToID, &linkPreviewRaw, &msg.IsPinned, &msg.IsEdited, &msg.Reactions, &msg.CreatedAt, &msg.UpdatedAt,
-			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
+			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.BannerURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
 		)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to scan message in GetChannelMessages")
@@ -737,7 +737,7 @@ func (s *Service) GetPinnedMessages(ctx context.Context, channelID, userID uuid.
 	query := `
 		SELECT m.id, m.channel_id, m.author_id, m.encrypted_content, m.reply_to_id,
 		       m.link_previews, m.is_pinned, m.is_edited, m.reactions, m.created_at, m.updated_at,
-		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.channel_id = $1 AND m.is_pinned = true AND m.deleted_at IS NULL
@@ -761,7 +761,7 @@ func (s *Service) GetPinnedMessages(ctx context.Context, channelID, userID uuid.
 		err := rows.Scan(
 			&msg.ID, &msg.ChannelID, &msg.AuthorID, &encContent,
 			&msg.ReplyToID, &linkPreviewRaw, &msg.IsPinned, &msg.IsEdited, &msg.Reactions, &msg.CreatedAt, &msg.UpdatedAt,
-			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
+			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.BannerURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
 		)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to scan pinned message")
@@ -819,7 +819,7 @@ func (s *Service) SearchMessages(ctx context.Context, channelID, userID uuid.UUI
 	query := `
 		SELECT m.id, m.channel_id, m.author_id, m.encrypted_content, m.reply_to_id,
 		       m.link_previews, m.is_pinned, m.created_at, m.updated_at, m.is_edited,
-		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.channel_id = $1 AND m.deleted_at IS NULL
@@ -843,7 +843,7 @@ func (s *Service) SearchMessages(ctx context.Context, channelID, userID uuid.UUI
 		err := rows.Scan(
 			&msg.ID, &msg.ChannelID, &msg.AuthorID, &encContent,
 			&msg.ReplyToID, &linkPreviewRaw, &msg.IsPinned, &msg.CreatedAt, &msg.UpdatedAt, &msg.IsEdited,
-			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
+			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.BannerURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -907,7 +907,7 @@ func (s *Service) getMessageAttachments(ctx context.Context, messageID uuid.UUID
 func (s *Service) getReplyPreview(ctx context.Context, messageID uuid.UUID) (*MessageReplyPreview, error) {
 	query := `
 		SELECT m.id, m.channel_id, m.encrypted_content, m.author_id,
-		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.id = $1`
@@ -919,7 +919,7 @@ func (s *Service) getReplyPreview(ctx context.Context, messageID uuid.UUID) (*Me
 
 	err := s.db.QueryRow(ctx, query, messageID).Scan(
 		&preview.ID, &channelID, &encContent, &preview.AuthorID,
-		&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
+		&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.BannerURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -960,7 +960,7 @@ func (s *Service) batchGetReplyPreviews(ctx context.Context, messageIDs []uuid.U
 
 	query := `
 		SELECT m.id, m.channel_id, m.encrypted_content, m.author_id,
-		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.id = ANY($1)`
@@ -979,7 +979,7 @@ func (s *Service) batchGetReplyPreviews(ctx context.Context, messageIDs []uuid.U
 
 		err := rows.Scan(
 			&preview.ID, &channelID, &encContent, &preview.AuthorID,
-			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
+			&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.BannerURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
 		)
 		if err != nil {
 			continue

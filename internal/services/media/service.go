@@ -611,3 +611,41 @@ func (s *Service) UpdateCommunityIcon(ctx context.Context, communityID, userID u
 func (s *Service) UpdateCommunityBanner(ctx context.Context, communityID, userID uuid.UUID, bannerURL string) error {
 	return s.communityService.UpdateCommunityBanner(ctx, communityID, userID, bannerURL)
 }
+
+// UploadUserBanner handles user profile banner uploads
+func (s *Service) UploadUserBanner(ctx context.Context, userID uuid.UUID, file multipart.File, header *multipart.FileHeader) (string, error) {
+	contentType := header.Header.Get("Content-Type")
+	if !AllowedImageTypes[contentType] {
+		return "", ErrInvalidFileType
+	}
+
+	if header.Size > MaxImageSize {
+		return "", ErrFileTooLarge
+	}
+
+	fileData, err := io.ReadAll(file)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+
+	ext := filepath.Ext(header.Filename)
+	objectName := fmt.Sprintf("user-banners/%s-%d%s", userID.String(), time.Now().Unix(), ext)
+
+	_, err = s.minio.PutObject(ctx, s.bucketAvatars, objectName, bytes.NewReader(fileData), int64(len(fileData)),
+		minio.PutObjectOptions{
+			ContentType: contentType,
+		})
+	if err != nil {
+		return "", fmt.Errorf("failed to upload user banner: %w", err)
+	}
+
+	url := s.getPublicURL(s.bucketAvatars, objectName)
+
+	_, err = s.db.Exec(ctx, "UPDATE users SET banner_url = $1, updated_at = NOW() WHERE id = $2", url, userID)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to update user banner_url after upload")
+		return "", fmt.Errorf("failed to update user banner: %w", err)
+	}
+
+	return url, nil
+}

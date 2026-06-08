@@ -1011,7 +1011,7 @@ func (s *Service) GetMembers(ctx context.Context, communityID uuid.UUID, limit, 
 
 	rows, err := s.db.Query(ctx,
 		`SELECT cm.id, cm.community_id, cm.user_id, cm.nickname, cm.joined_at,
-		u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM community_members cm
 		JOIN users u ON u.id = cm.user_id
 		WHERE cm.community_id = $1
@@ -1030,7 +1030,7 @@ func (s *Service) GetMembers(ctx context.Context, communityID uuid.UUID, limit, 
 		u := &models.PublicUser{}
 		err := rows.Scan(
 			&m.ID, &m.CommunityID, &m.UserID, &m.Nickname, &m.JoinedAt,
-			&u.ID, &u.Username, &u.DisplayName, &u.AvatarURL, &u.Bio, &u.Status, &u.CustomStatus, &u.CreatedAt,
+			&u.ID, &u.Username, &u.DisplayName, &u.AvatarURL, &u.BannerURL, &u.Bio, &u.Status, &u.CustomStatus, &u.CreatedAt,
 		)
 		if err != nil {
 			return nil, 0, err
@@ -1335,8 +1335,8 @@ func (s *Service) GetBans(ctx context.Context, communityID, actorID uuid.UUID) (
 
 	rows, err := s.db.Query(ctx,
 		`SELECT cb.id, cb.community_id, cb.user_id, cb.banned_by, cb.reason, cb.created_at,
-			u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at,
-			b.id, b.username, b.display_name, b.avatar_url, b.bio, b.status, b.custom_status, b.created_at
+			u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at,
+			b.id, b.username, b.display_name, b.avatar_url, b.banner_url, b.bio, b.status, b.custom_status, b.created_at
 		FROM community_bans cb
 		JOIN users u ON u.id = cb.user_id
 		JOIN users b ON b.id = cb.banned_by
@@ -1356,8 +1356,8 @@ func (s *Service) GetBans(ctx context.Context, communityID, actorID uuid.UUID) (
 		bannedByUser := &models.PublicUser{}
 		err := rows.Scan(
 			&ban.ID, &ban.CommunityID, &ban.UserID, &ban.BannedBy, &ban.Reason, &ban.CreatedAt,
-			&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt,
-			&bannedByUser.ID, &bannedByUser.Username, &bannedByUser.DisplayName, &bannedByUser.AvatarURL, &bannedByUser.Bio, &bannedByUser.Status, &bannedByUser.CustomStatus, &bannedByUser.CreatedAt,
+			&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.BannerURL, &user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt,
+			&bannedByUser.ID, &bannedByUser.Username, &bannedByUser.DisplayName, &bannedByUser.AvatarURL, &bannedByUser.BannerURL, &bannedByUser.Bio, &bannedByUser.Status, &bannedByUser.CustomStatus, &bannedByUser.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -1409,7 +1409,7 @@ func (s *Service) GetAuditLogs(ctx context.Context, communityID, actorID uuid.UU
 
 	rows, err := s.db.Query(ctx,
 		`SELECT al.id, al.community_id, al.actor_id, al.action, al.target_type, al.target_id, al.details, al.created_at,
-			u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+			u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM audit_logs al
 		JOIN users u ON u.id = al.actor_id
 		WHERE al.community_id = $1
@@ -1429,7 +1429,7 @@ func (s *Service) GetAuditLogs(ctx context.Context, communityID, actorID uuid.UU
 		err := rows.Scan(
 			&entry.ID, &entry.CommunityID, &entry.ActorID, &entry.Action,
 			&entry.TargetType, &entry.TargetID, &entry.Details, &entry.CreatedAt,
-			&actor.ID, &actor.Username, &actor.DisplayName, &actor.AvatarURL,
+			&actor.ID, &actor.Username, &actor.DisplayName, &actor.AvatarURL, &actor.BannerURL,
 			&actor.Bio, &actor.Status, &actor.CustomStatus, &actor.CreatedAt,
 		)
 		if err != nil {

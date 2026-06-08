@@ -513,7 +513,7 @@ func (s *Service) getMessageResponse(ctx context.Context, messageID uuid.UUID) (
 	query := `
 		SELECT m.id, m.channel_id, m.author_id, m.encrypted_content, m.reply_to_id,
 		       m.link_previews, m.is_pinned, m.is_edited, m.reactions, m.created_at, m.updated_at,
-		       u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		       u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		WHERE m.id = $1 AND m.deleted_at IS NULL`
@@ -526,7 +526,7 @@ func (s *Service) getMessageResponse(ctx context.Context, messageID uuid.UUID) (
 	err := s.db.QueryRow(ctx, query, messageID).Scan(
 		&msg.ID, &msg.ChannelID, &msg.AuthorID, &encContent,
 		&msg.ReplyToID, &linkPreviewRaw, &msg.IsPinned, &msg.IsEdited, &msg.Reactions, &msg.CreatedAt, &msg.UpdatedAt,
-		&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
+		&author.ID, &author.Username, &author.DisplayName, &author.AvatarURL, &author.BannerURL, &author.Bio, &author.Status, &author.CustomStatus, &author.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

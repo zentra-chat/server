@@ -33,6 +33,9 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/avatars/user", h.UploadUserAvatar)
 	r.Post("/avatars/community/{communityId}", h.UploadCommunityAvatar)
 
+	// Banner routes
+	r.Post("/banners/user", h.UploadUserBanner)
+
 	// Community asset routes
 	r.Post("/communities/{communityId}/banner", h.UploadCommunityBanner)
 	r.Post("/communities/{communityId}/icon", h.UploadCommunityIcon)
@@ -318,6 +321,43 @@ func (h *Handler) UploadCommunityAvatar(w http.ResponseWriter, r *http.Request) 
 	}
 
 	utils.RespondSuccess(w, map[string]string{"url": url})
+}
+
+func (h *Handler) UploadUserBanner(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.RequireAuth(r.Context())
+	if err != nil {
+		utils.RespondError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, MaxImageSize)
+
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "Failed to parse form data")
+		return
+	}
+
+	file, header, err := r.FormFile("banner")
+	if err != nil {
+		utils.RespondError(w, http.StatusBadRequest, "No file provided")
+		return
+	}
+	defer file.Close()
+
+	bannerURL, err := h.service.UploadUserBanner(r.Context(), userID, file, header)
+	if err != nil {
+		switch err {
+		case ErrFileTooLarge:
+			utils.RespondError(w, http.StatusRequestEntityTooLarge, "File too large (max 10MB)")
+		case ErrInvalidFileType:
+			utils.RespondError(w, http.StatusBadRequest, "Invalid file type (images only)")
+		default:
+			utils.RespondError(w, http.StatusInternalServerError, "Failed to upload banner")
+		}
+		return
+	}
+
+	utils.RespondSuccess(w, map[string]string{"url": bannerURL})
 }
 
 func (h *Handler) UploadCommunityBanner(w http.ResponseWriter, r *http.Request) {

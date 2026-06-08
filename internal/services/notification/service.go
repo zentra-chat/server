@@ -481,9 +481,9 @@ func (s *Service) createAndSend(ctx context.Context, n models.Notification) {
 	if n.ActorID != nil {
 		var actor models.PublicUser
 		if err := s.db.QueryRow(ctx,
-			`SELECT id, username, display_name, avatar_url, bio, status, custom_status, created_at
+			`SELECT id, username, display_name, avatar_url, banner_url, bio, status, custom_status, created_at
 			 FROM users WHERE id = $1`, *n.ActorID,
-		).Scan(&actor.ID, &actor.Username, &actor.DisplayName, &actor.AvatarURL,
+		).Scan(&actor.ID, &actor.Username, &actor.DisplayName, &actor.AvatarURL, &actor.BannerURL,
 			&actor.Bio, &actor.Status, &actor.CustomStatus, &actor.CreatedAt,
 		); err == nil {
 			n.Actor = &actor

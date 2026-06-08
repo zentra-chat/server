@@ -24,6 +24,7 @@ type User struct {
 	PasswordHash     string     `json:"-" db:"password_hash"`
 	DisplayName      *string    `json:"displayName,omitempty" db:"display_name"`
 	AvatarURL        *string    `json:"avatarUrl,omitempty" db:"avatar_url"`
+	BannerURL        *string    `json:"bannerUrl,omitempty" db:"banner_url"`
 	Bio              *string    `json:"bio,omitempty" db:"bio"`
 	Status           UserStatus `json:"status" db:"status"`
 	CustomStatus     *string    `json:"customStatus,omitempty" db:"custom_status"`
@@ -97,6 +98,7 @@ type PublicUser struct {
 	Username     string     `json:"username"`
 	DisplayName  *string    `json:"displayName,omitempty"`
 	AvatarURL    *string    `json:"avatarUrl,omitempty"`
+	BannerURL    *string    `json:"bannerUrl,omitempty"`
 	Bio          *string    `json:"bio,omitempty"`
 	Status       UserStatus `json:"status"`
 	CustomStatus *string    `json:"customStatus,omitempty"`
@@ -109,6 +111,7 @@ func (u *User) ToPublic() *PublicUser {
 		Username:     u.Username,
 		DisplayName:  u.DisplayName,
 		AvatarURL:    u.AvatarURL,
+		BannerURL:    u.BannerURL,
 		Bio:          u.Bio,
 		Status:       u.Status,
 		CustomStatus: u.CustomStatus,

@@ -76,13 +76,13 @@ func (s *Service) broadcast(ctx context.Context, userID uuid.UUID, eventType str
 func (s *Service) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	user := &models.User{}
 	err := s.db.QueryRow(ctx,
-		`SELECT id, username, email, display_name, avatar_url, bio, status, custom_status,
+		`SELECT id, username, email, display_name, avatar_url, banner_url, bio, status, custom_status,
 		email_verified, two_factor_enabled, created_at, updated_at, last_seen_at, is_admin
 		FROM users WHERE id = $1 AND deleted_at IS NULL`,
 		id,
 	).Scan(
 		&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.AvatarURL,
-		&user.Bio, &user.Status, &user.CustomStatus, &user.EmailVerified,
+		&user.BannerURL, &user.Bio, &user.Status, &user.CustomStatus, &user.EmailVerified,
 		&user.TwoFactorEnabled, &user.CreatedAt, &user.UpdatedAt, &user.LastSeenAt,
 		&user.IsAdmin,
 	)
@@ -106,12 +106,12 @@ func (s *Service) GetPublicUser(ctx context.Context, id uuid.UUID) (*models.Publ
 func (s *Service) GetUserByUsername(ctx context.Context, username string) (*models.PublicUser, error) {
 	user := &models.User{}
 	err := s.db.QueryRow(ctx,
-		`SELECT id, username, display_name, avatar_url, bio, status, custom_status, created_at
+		`SELECT id, username, display_name, avatar_url, banner_url, bio, status, custom_status, created_at
 		FROM users WHERE username = $1 AND deleted_at IS NULL`,
 		username,
 	).Scan(
 		&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL,
-		&user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt,
+		&user.BannerURL, &user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -166,6 +166,32 @@ func (s *Service) UpdateAvatar(ctx context.Context, userID uuid.UUID, avatarURL 
 func (s *Service) RemoveAvatar(ctx context.Context, userID uuid.UUID) error {
 	_, err := s.db.Exec(ctx,
 		`UPDATE users SET avatar_url = NULL, updated_at = NOW() WHERE id = $1`,
+		userID,
+	)
+	if err == nil {
+		if user, err := s.GetUserByID(ctx, userID); err == nil {
+			s.broadcast(ctx, userID, "USER_UPDATE", user)
+		}
+	}
+	return err
+}
+
+func (s *Service) UpdateBanner(ctx context.Context, userID uuid.UUID, bannerURL string) error {
+	_, err := s.db.Exec(ctx,
+		`UPDATE users SET banner_url = $2, updated_at = NOW() WHERE id = $1`,
+		userID, bannerURL,
+	)
+	if err == nil {
+		if user, err := s.GetUserByID(ctx, userID); err == nil {
+			s.broadcast(ctx, userID, "USER_UPDATE", user)
+		}
+	}
+	return err
+}
+
+func (s *Service) RemoveBanner(ctx context.Context, userID uuid.UUID) error {
+	_, err := s.db.Exec(ctx,
+		`UPDATE users SET banner_url = NULL, updated_at = NOW() WHERE id = $1`,
 		userID,
 	)
 	if err == nil {
@@ -274,7 +300,7 @@ func (s *Service) SearchUsers(ctx context.Context, query string, limit, offset i
 	}
 
 	rows, err := s.db.Query(ctx,
-		`SELECT id, username, display_name, avatar_url, bio, status, custom_status, created_at
+		`SELECT id, username, display_name, avatar_url, banner_url, bio, status, custom_status, created_at
 		FROM users 
 		WHERE deleted_at IS NULL AND (username ILIKE $1 OR display_name ILIKE $1)
 		ORDER BY username
@@ -291,7 +317,7 @@ func (s *Service) SearchUsers(ctx context.Context, query string, limit, offset i
 		user := &models.PublicUser{}
 		err := rows.Scan(
 			&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL,
-			&user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt,
+			&user.BannerURL, &user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt,
 		)
 		if err != nil {
 			return nil, 0, err
@@ -621,7 +647,7 @@ func (s *Service) GetFriendRequests(ctx context.Context, userID uuid.UUID) (*mod
 	}
 
 	incomingRows, err := s.db.Query(ctx,
-		`SELECT fr.created_at, u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		`SELECT fr.created_at, u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		 FROM friend_requests fr
 		 JOIN users u ON u.id = fr.sender_id
 		 WHERE fr.receiver_id = $1 AND u.deleted_at IS NULL
@@ -639,7 +665,7 @@ func (s *Service) GetFriendRequests(ctx context.Context, userID uuid.UUID) (*mod
 		if err := incomingRows.Scan(
 			&request.CreatedAt,
 			&friendUser.ID, &friendUser.Username, &friendUser.DisplayName, &friendUser.AvatarURL,
-			&friendUser.Bio, &friendUser.Status, &friendUser.CustomStatus, &friendUser.CreatedAt,
+			&friendUser.BannerURL, &friendUser.Bio, &friendUser.Status, &friendUser.CustomStatus, &friendUser.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -652,7 +678,7 @@ func (s *Service) GetFriendRequests(ctx context.Context, userID uuid.UUID) (*mod
 	}
 
 	outgoingRows, err := s.db.Query(ctx,
-		`SELECT fr.created_at, u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		`SELECT fr.created_at, u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		 FROM friend_requests fr
 		 JOIN users u ON u.id = fr.receiver_id
 		 WHERE fr.sender_id = $1 AND u.deleted_at IS NULL
@@ -670,7 +696,7 @@ func (s *Service) GetFriendRequests(ctx context.Context, userID uuid.UUID) (*mod
 		if err := outgoingRows.Scan(
 			&request.CreatedAt,
 			&friendUser.ID, &friendUser.Username, &friendUser.DisplayName, &friendUser.AvatarURL,
-			&friendUser.Bio, &friendUser.Status, &friendUser.CustomStatus, &friendUser.CreatedAt,
+			&friendUser.BannerURL, &friendUser.Bio, &friendUser.Status, &friendUser.CustomStatus, &friendUser.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -687,7 +713,7 @@ func (s *Service) GetFriendRequests(ctx context.Context, userID uuid.UUID) (*mod
 
 func (s *Service) GetFriends(ctx context.Context, userID uuid.UUID) ([]*models.PublicUser, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		`SELECT u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		 FROM user_friendships f
 		 JOIN users u ON u.id = CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END
 		 WHERE (f.user_id = $1 OR f.friend_id = $1)
@@ -705,7 +731,7 @@ func (s *Service) GetFriends(ctx context.Context, userID uuid.UUID) ([]*models.P
 		friendUser := &models.PublicUser{}
 		if err := rows.Scan(
 			&friendUser.ID, &friendUser.Username, &friendUser.DisplayName, &friendUser.AvatarURL,
-			&friendUser.Bio, &friendUser.Status, &friendUser.CustomStatus, &friendUser.CreatedAt,
+			&friendUser.BannerURL, &friendUser.Bio, &friendUser.Status, &friendUser.CustomStatus, &friendUser.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -870,7 +896,7 @@ func (s *Service) UnblockUser(ctx context.Context, blockerID, blockedID uuid.UUI
 
 func (s *Service) GetBlockedUsers(ctx context.Context, userID uuid.UUID) ([]*models.PublicUser, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.status, u.custom_status, u.created_at
+		`SELECT u.id, u.username, u.display_name, u.avatar_url, u.banner_url, u.bio, u.status, u.custom_status, u.created_at
 		FROM user_blocks b
 		JOIN users u ON u.id = b.blocked_id
 		WHERE b.blocker_id = $1`,
@@ -886,7 +912,7 @@ func (s *Service) GetBlockedUsers(ctx context.Context, userID uuid.UUID) ([]*mod
 		user := &models.PublicUser{}
 		err := rows.Scan(
 			&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL,
-			&user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt,
+			&user.BannerURL, &user.Bio, &user.Status, &user.CustomStatus, &user.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
