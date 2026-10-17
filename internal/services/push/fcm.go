@@ -21,10 +21,6 @@ const (
 	fcmTokenURL     = "https://oauth2.googleapis.com/token"
 	fcmScope        = "https://www.googleapis.com/auth/firebase.messaging"
 
-	// The client mirrors this channel in its local notification setup, so the
-	// OS reuses the channel the user already has settings for.
-	fcmAndroidChannelID = "zentra_messages"
-
 	fcmRequestTimeout = 15 * time.Second
 	// The whole payload has to fit, the limit is enforced by the OS.
 	fcmMaxPayloadBytes = 4096
@@ -140,9 +136,6 @@ func (s *fcmSender) Send(ctx context.Context, token string, msg Message) error {
 				// High priority keeps messages arriving immediately during Doze,
 				// which is the whole point of using push over polling.
 				"priority": "high",
-				"notification": map[string]any{
-					"channel_id": fcmAndroidChannelID,
-				},
 			},
 		},
 	})
