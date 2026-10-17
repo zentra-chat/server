@@ -30,6 +30,7 @@ import (
 	"github.com/zentra/server/internal/services/message"
 	"github.com/zentra/server/internal/services/notification"
 	"github.com/zentra/server/internal/services/plugin"
+	"github.com/zentra/server/internal/services/push"
 	"github.com/zentra/server/internal/services/user"
 	"github.com/zentra/server/internal/services/voice"
 	"github.com/zentra/server/internal/services/webhook"
@@ -146,6 +147,24 @@ func main() {
 	dmService.SetNotificationService(notificationService)
 	channelService.SetNotificationService(notificationService)
 
+	// Push service handles delivery when a user has no live connection. Missing
+	// credentials leave it inert rather than failing startup.
+	pushService := push.NewService(db, wsHub, push.Config{
+		FCM: push.FCMConfig{
+			ProjectID:   cfg.Push.FCMProjectID,
+			ClientEmail: cfg.Push.FCMClientEmail,
+			PrivateKey:  cfg.Push.FCMPrivateKey,
+		},
+		APNS: push.APNSConfig{
+			KeyID:      cfg.Push.APNSKeyID,
+			TeamID:     cfg.Push.APNSTeamID,
+			BundleID:   cfg.Push.APNSBundleID,
+			PrivateKey: cfg.Push.APNSPrivateKey,
+			Sandbox:    cfg.Push.APNSSandbox,
+		},
+	})
+	notificationService.SetPushDispatcher(pushService)
+
 	// Initialize handlers
 	authHandler := auth.NewHandler(authService)
 	userHandler := user.NewHandler(userService)
@@ -160,6 +179,7 @@ func main() {
 	voiceHandler := voice.NewHandler(voiceService)
 	webhookHandler := webhook.NewHandler(webhookService)
 	notificationHandler := notification.NewHandler(notificationService)
+	pushHandler := push.NewHandler(pushService)
 	pluginHandler := plugin.NewHandler(pluginService)
 	adminHandler := admin.NewHandler(adminService)
 	githubStatsService := githubstats.NewService(cfg.GitHub.Token)
@@ -213,10 +233,10 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"status":            status,
-			"maintenance":       maintenanceMode,
+			"status":             status,
+			"maintenance":        maintenanceMode,
 			"maintenanceMessage": maintenanceMsg,
-			"timestamp":         time.Now().Format(time.RFC3339),
+			"timestamp":          time.Now().Format(time.RFC3339),
 		})
 	})
 
@@ -251,6 +271,7 @@ func main() {
 			r.Mount("/media", mediaHandler.Routes())
 			r.Mount("/emojis", emojiHandler.Routes())
 			r.Mount("/notifications", notificationHandler.Routes())
+			r.Mount("/push", pushHandler.Routes())
 			r.Mount("/voice", voiceHandler.Routes())
 			r.Mount("/plugins", pluginHandler.Routes())
 

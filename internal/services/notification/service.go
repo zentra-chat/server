@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 	"github.com/zentra/server/internal/models"
+	"github.com/zentra/server/internal/services/push"
 )
 
 const (
@@ -42,6 +43,12 @@ type HubInterface interface {
 	IsUserOnline(userID uuid.UUID) bool
 }
 
+// PushDispatcher delivers a notification to a user's devices when they are not
+// connected to the websocket.
+type PushDispatcher interface {
+	Notify(ctx context.Context, userID uuid.UUID, msg push.Message)
+}
+
 // ParsedMention is a single mention extracted from message content.
 type ParsedMention struct {
 	Type   models.MentionType
@@ -61,12 +68,19 @@ type MentionContext struct {
 
 // Service handles notification persistence and real-time delivery.
 type Service struct {
-	db  *pgxpool.Pool
-	hub HubInterface
+	db   *pgxpool.Pool
+	hub  HubInterface
+	push PushDispatcher
 }
 
 func NewService(db *pgxpool.Pool, hub HubInterface) *Service {
 	return &Service{db: db, hub: hub}
+}
+
+// SetPushDispatcher wires in OS level delivery. It is optional, a gateway
+// without push credentials still serves websocket notifications.
+func (s *Service) SetPushDispatcher(dispatcher PushDispatcher) {
+	s.push = dispatcher
 }
 
 // DMNotificationContext carries context for notifying DM recipients.
@@ -492,6 +506,42 @@ func (s *Service) createAndSend(ctx context.Context, n models.Notification) {
 
 	ptr := n
 	s.hub.SendUserEvent(n.UserID, EventTypeNotification, &ptr)
+
+	// The push dispatcher skips users with a live connection, so reaching here
+	// costs nothing for anyone currently in the app.
+	if s.push != nil {
+		s.push.Notify(ctx, n.UserID, toPushMessage(n))
+	}
+}
+
+// toPushMessage maps a stored notification onto the payload both push
+// providers deliver. Direct messages carry their conversation in metadata
+// rather than a channel id.
+func toPushMessage(n models.Notification) push.Message {
+	msg := push.Message{
+		Title:          n.Title,
+		NotificationID: n.ID.String(),
+		Type:           string(n.Type),
+	}
+	if n.Body != nil {
+		msg.Body = *n.Body
+	}
+	if n.CommunityID != nil {
+		msg.CommunityID = n.CommunityID.String()
+	}
+	if n.ChannelID != nil {
+		msg.ChannelID = n.ChannelID.String()
+	}
+	if n.MessageID != nil {
+		msg.MessageID = n.MessageID.String()
+	}
+	if n.ActorID != nil {
+		msg.ActorID = n.ActorID.String()
+	}
+	if conversationID, ok := n.Metadata["conversationId"].(string); ok {
+		msg.ConversationID = conversationID
+	}
+	return msg
 }
 
 func (s *Service) storeMention(ctx context.Context, m models.MessageMention) {

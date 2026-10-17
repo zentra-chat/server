@@ -419,7 +419,7 @@ func (s *Service) GetChannelMessages(ctx context.Context, channelID, userID uuid
 		return nil, fmt.Errorf("failed to derive channel key: %w", err)
 	}
 
-	var messages []*MessageResponse
+	messages := make([]*MessageResponse, 0)
 	messageIDs := make([]uuid.UUID, 0)
 
 	for rows.Next() {
@@ -751,7 +751,7 @@ func (s *Service) GetPinnedMessages(ctx context.Context, channelID, userID uuid.
 	}
 	defer rows.Close()
 
-	var messages []*MessageResponse
+	messages := make([]*MessageResponse, 0)
 	for rows.Next() {
 		var msg models.Message
 		var encContent []byte
@@ -833,7 +833,7 @@ func (s *Service) SearchMessages(ctx context.Context, channelID, userID uuid.UUI
 	}
 	defer rows.Close()
 
-	var messages []*MessageResponse
+	messages := make([]*MessageResponse, 0)
 	for rows.Next() {
 		var msg models.Message
 		var encContent []byte

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -62,6 +63,21 @@ type Config struct {
 	}
 	GitHub struct {
 		Token string
+	}
+	Push struct {
+		// Firebase service account. ProjectID and ClientEmail identify the
+		// account, PrivateKeyPath points at the downloaded key file.
+		FCMProjectID   string
+		FCMClientEmail string
+		FCMPrivateKey  string
+		FCMKeyFilePath string
+		// Apple Developer APNs signing key and the app's bundle identifier.
+		APNSKeyID      string
+		APNSTeamID     string
+		APNSBundleID   string
+		APNSPrivateKey string
+		// APNsSandbox targets the development push environment.
+		APNSSandbox bool
 	}
 }
 
@@ -142,6 +158,26 @@ func Load() (*Config, error) {
 
 	// GitHub API integration
 	cfg.GitHub.Token = strings.TrimSpace(getEnv("GITHUB_TOKEN", ""))
+
+	// Push notifications. Credentials are optional, a gateway without them
+	// still delivers notifications over the websocket.
+	cfg.Push.FCMProjectID = strings.TrimSpace(getEnv("FCM_PROJECT_ID", ""))
+	cfg.Push.FCMClientEmail = strings.TrimSpace(getEnv("FCM_CLIENT_EMAIL", ""))
+	cfg.Push.FCMPrivateKey = strings.TrimSpace(getEnv("FCM_PRIVATE_KEY", ""))
+	cfg.Push.FCMKeyFilePath = strings.TrimSpace(getEnv("FCM_PRIVATE_KEY_FILE", ""))
+	if cfg.Push.FCMPrivateKey == "" && cfg.Push.FCMKeyFilePath != "" {
+		contents, err := os.ReadFile(cfg.Push.FCMKeyFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("reading FCM private key file: %w", err)
+		}
+		cfg.Push.FCMPrivateKey = strings.TrimSpace(string(contents))
+	}
+
+	cfg.Push.APNSKeyID = strings.TrimSpace(getEnv("APNS_KEY_ID", ""))
+	cfg.Push.APNSTeamID = strings.TrimSpace(getEnv("APNS_TEAM_ID", ""))
+	cfg.Push.APNSBundleID = strings.TrimSpace(getEnv("APNS_BUNDLE_ID", ""))
+	cfg.Push.APNSPrivateKey = strings.TrimSpace(getEnv("APNS_PRIVATE_KEY", ""))
+	cfg.Push.APNSSandbox = getEnvBool("APNS_SANDBOX", true)
 
 	AppConfig = cfg
 	return cfg, nil
